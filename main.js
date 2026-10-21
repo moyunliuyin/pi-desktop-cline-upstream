@@ -89,7 +89,12 @@ function publishSnapshot() {
     snapshotTimer = null;
     if (!pi || !pi.plugin || typeof pi.plugin.setSettings !== "function") return;
     const payload = Object.assign({}, settings, {
-      routingSnapshot: JSON.stringify({ at: state.updatedAt, models: state.models, available: state.availableModels || [] }),
+      routingSnapshot: JSON.stringify({
+        at: state.updatedAt,
+        models: state.models,
+        available: state.availableModels || [],
+        catalog: state.catalogStatus || null,
+      }),
     });
     Promise.resolve(pi.plugin.setSettings(payload)).catch((error) => {
       log("warn", "could not publish snapshot: " + messageOf(error));
@@ -187,19 +192,43 @@ function filterIds(ids) {
   return set ? ids.filter((id) => set.has(id)) : ids;
 }
 
+/** 出厂就知道的模型：即使 key 失效、目录拉不到、清单被缩过，面板也不至于只剩几条。 */
+const FLOOR_MODEL_IDS = [
+  "cline-pass/deepseek-v4.1-flash",
+  "cline-pass/deepseek-v4-pro",
+  "cline-pass/kimi-k3",
+  "cline-pass/kimi-k2.7-code",
+  "cline-pass/qwen3.8-max",
+  "cline-pass/glm-5.3",
+  "cline-pass/mimo-v2.6-pro",
+  "cline-pass/minimax-m3",
+];
+
 /**
- * 拉一次上游模型目录（失败退回内置清单），写进 state 并发布快照，
- * 面板的模型勾选区因此不必等 PI 打 /v1/models 才有内容。
+ * 目录只增不减：拉取失败时退回「已知的全部模型」，绝不因为清单被缩过就跟着缩水。
+ * 否则面板会把自己锁死——只剩声明里那几个，用户再也勾不回来。
  */
-function fetchCatalog(done) {
+function knownCatalog() {
   const seeded = declaredModels().map((m) => m.id);
-  const finish = (ids) => {
+  const cached = Array.isArray(state.catalog) ? state.catalog : [];
+  const previous = Array.isArray(state.availableModels) ? state.availableModels : [];
+  const seen = [];
+  for (const id of [...FLOOR_MODEL_IDS, ...seeded, ...cached, ...previous]) {
+    if (id && seen.indexOf(id) === -1) seen.push(id);
+  }
+  return seen;
+}
+
+function fetchCatalog(done) {
+  const known = knownCatalog();
+  const finish = (ids, ok, note) => {
     state.availableModels = ids;
+    state.catalogStatus = { ok, at: Date.now(), count: ids.length, note: note || null };
     saveState();
     if (done) done(ids);
   };
   if (!settings.apiKey) {
-    finish(seeded);
+    finish(known, false, "no-api-key");
     return;
   }
   const req = https.request(
@@ -214,22 +243,32 @@ function fetchCatalog(done) {
       const chunks = [];
       res.on("data", (chunk) => chunks.push(chunk));
       res.on("end", () => {
+        let ids = [];
         try {
           const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-          const ids = (Array.isArray(parsed && parsed.data) ? parsed.data : [])
+          ids = (Array.isArray(parsed && parsed.data) ? parsed.data : [])
             .filter((m) => m && typeof m.id === "string" && m.id.startsWith("cline-pass/"))
             .map((m) => m.id);
-          finish(ids.length ? ids : seeded);
         } catch (error) {
           log("warn", "catalog parse failed: " + messageOf(error));
-          finish(seeded);
         }
+        if (!ids.length) {
+          log("warn", "catalog empty (status " + res.statusCode + "), keeping " + known.length + " known models");
+          finish(known, false, "empty:" + res.statusCode);
+          return;
+        }
+        const merged = known.slice();
+        for (const id of ids) {
+          if (merged.indexOf(id) === -1) merged.push(id);
+        }
+        state.catalog = merged;
+        finish(merged, true);
       });
     }
   );
   req.on("error", (error) => {
     log("warn", "catalog fetch failed: " + messageOf(error));
-    finish(seeded);
+    finish(known, false, "network");
   });
   req.end();
 }
@@ -527,6 +566,7 @@ function snapshot() {
     models: state.models,
     updatedAt: state.updatedAt,
     lastError: state.lastError,
+    catalogStatus: state.catalogStatus || null,
     declared: declaredModels().map((m) => m.id),
   };
 }
@@ -556,14 +596,12 @@ function handle(req, res) {
   }
 
   if (req.method === "GET" && url === "/v1/models") {
-    // PI 的「获取列表」会打这里。
-    fetchCatalog((ids) => {
-      const exposed = filterIds(ids);
-      writeJson(res, 200, {
-        object: "list",
-        data: exposed.map((id) => ({ id, object: "model", owned_by: "cline-pass" })),
-      });
-      if (settings.enabledModels) setTimeout(() => publishModels(exposed), 800);
+    // PI 的「获取列表」会打这里。只暴露声明里的模型（再按白名单过滤）：
+    // 若返回完整目录，宿主会把整张目录抄回服务商行，清单就再也缩不回去。
+    const exposed = filterIds(declaredModels().map((m) => m.id));
+    writeJson(res, 200, {
+      object: "list",
+      data: exposed.map((id) => ({ id, object: "model", owned_by: "cline-pass" })),
     });
     return;
   }

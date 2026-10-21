@@ -213,6 +213,16 @@ function renderModels(settings) {
       ? "全部启用"
       : `已选 ${checkedCount} 个（未勾选的请求被拒绝）`;
   el.modelsHint.textContent = `共 ${available.length} 个，${scope} · 重启 PI 后模型下拉框 = ${effCount} 个`;
+  const cat = (snapshotOf(settings) || {}).catalog;
+  if (cat && cat.ok === false) {
+    const why =
+      cat.note === "no-api-key"
+        ? "未填 key"
+        : cat.note === "network"
+          ? "网络失败"
+          : String(cat.note || "未知原因");
+    el.modelsHint.textContent += ` · 目录未刷新（${why}），当前显示已知模型`;
+  }
 
   const frag = document.createDocumentFragment();
   for (const id of available) {

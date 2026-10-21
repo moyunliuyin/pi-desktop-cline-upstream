@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.moyunliuyin.cline-upstream",
   "name": "Cline Upstream",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "随插件启动的 ClinePass 本机桥接：显示每个请求落在哪个真实上游、还有哪些备选，可按勾选锚定上游并限制可用模型。改模型清单后需重启 PI 生效。",
   "author": "moyunliuyin",
   "license": "MIT",
@@ -353,7 +353,7 @@
       }
     ]
   },
-  "changelog": "默认清单收敛到 8 个常用模型（新装用户不再一次出现 18 条）；面板写明清单在下次启动时生效。宿主的实际机制为启动时按清单重建。",
+  "changelog": "修复面板模型列表被自己锁死：目录拉取失败时改用已知的全部模型，并在面板标出未刷新的原因；/v1/models 只暴露声明里的模型，避免宿主把整张目录抄回服务商行。",
   "homepage": "https://github.com/moyunliuyin/pi-desktop-cline-upstream",
   "repository": "https://github.com/moyunliuyin/pi-desktop-cline-upstream"
 }
