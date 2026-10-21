@@ -399,10 +399,52 @@ function handle(req, res) {
   }
 
   if (req.method === "GET" && url === "/v1/models") {
-    writeJson(res, 200, {
+    // PI 的「获取列表」会打这里。有 key 就拉上游真实目录，拿不到再退回内置清单。
+    const fallbackList = () => ({
       object: "list",
       data: declaredModels().map((m) => ({ id: m.id, object: "model", owned_by: "cline-pass" })),
     });
+    if (!settings.apiKey) {
+      writeJson(res, 200, fallbackList());
+      return;
+    }
+    const listReq = https.request(
+      {
+        host: UPSTREAM_HOST,
+        port: 443,
+        method: "GET",
+        path: UPSTREAM_BASE + "/models",
+        headers: { authorization: "Bearer " + settings.apiKey, accept: "application/json" },
+      },
+      (upstreamRes) => {
+        const chunks = [];
+        upstreamRes.on("data", (chunk) => chunks.push(chunk));
+        upstreamRes.on("end", () => {
+          try {
+            const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+            const list = Array.isArray(parsed && parsed.data) ? parsed.data : [];
+            const mine = list.filter((m) => m && typeof m.id === "string" && m.id.startsWith("cline-pass/"));
+            if (mine.length === 0) {
+              writeJson(res, 200, fallbackList());
+              return;
+            }
+            state.modelCount = mine.length;
+            writeJson(res, 200, {
+              object: "list",
+              data: mine.map((m) => ({ id: m.id, object: "model", owned_by: "cline-pass" })),
+            });
+          } catch (error) {
+            log("warn", "model list parse failed: " + messageOf(error));
+            writeJson(res, 200, fallbackList());
+          }
+        });
+      }
+    );
+    listReq.on("error", (error) => {
+      log("warn", "model list upstream failed: " + messageOf(error));
+      writeJson(res, 200, fallbackList());
+    });
+    listReq.end();
     return;
   }
 

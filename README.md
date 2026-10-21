@@ -1,84 +1,83 @@
 # Cline 上游 (Cline Upstream)
 
 ClinePass 的同一个模型背后挂着二十多个上游（DeepSeek 官方、Fireworks、Baseten、DigitalOcean…），
-但客户端看不见这一次到底落在谁身上。这个插件把这件事变成可见、可选、可验证。
+客户端看不见这一次到底落在谁身上。这个插件把它变成**可见、可选、可验证**。
 
 > 数据来源：Cline 网关自己在每个响应里返回的 `routing` 对象 —— 不是猜测，也不是统计推测。
 
 ## 它做什么
 
-1. **检测**：插件在本机 `127.0.0.1:41891` 起一个 OpenAI 兼容端点，把你的请求转发到
-   `api.cline.bot`，同时在响应里读出网关的路由元数据：
+1. **检测**：插件在 `127.0.0.1:41891` 起一个 OpenAI 兼容端点，把请求转发到 `api.cline.bot`，
+   并读出网关返回的路由元数据：
 
    | 字段 | 含义 |
    |---|---|
    | `finalProvider` | 这次实际服务的上游 |
    | `pinnedProvider` | 网关当前会话钉住的上游 |
-   | `fallbacksAvailable` | 还有多少个备选（以及都是谁） |
+   | `fallbacksAvailable` | 还有多少个备选 |
    | `promptCacheHitTokens` | 本次命中 prompt cache 的 token 数 |
    | `cost` | 本次实际成本 |
 
-2. **选择**：填一个「目标上游」并打开「写入 routing 字段」，插件会在请求体里加入
-   `provider: { only: ["<目标>"] }`；勾上「强制不降级」再加 `allow_fallbacks: false`。
+2. **选模型**：该服务商的 `/v1/models` 会**用你的 key 拉取上游真实目录**（只保留 `cline-pass/*`），
+   所以在 PI 里点「获取列表」就能勾选要用的模型；拉不到时退回内置的 18 个。
+3. **选上游 + 验证**：填一个目标上游并打开「写入 routing 字段」，插件会加
+   `provider: { only: ["<目标>"] }`（可选 `allow_fallbacks: false`），
+   再用下一次响应的 `finalProvider` 校验，面板直接显示 **已生效 / 未生效**。
 
-3. **验证**：下一次响应回来时，插件拿 `finalProvider` 和目标比对，面板上直接显示
-   **已生效 / 未生效**。
+## 配置（三步）
 
-## 为什么需要「验证」这一步
+1. 插件页 → 安装 `.piplug`
+2. **设置 → 插件 → Cline 上游** → 填 **ClinePass API Key**
+   （[app.cline.bot](https://app.cline.bot) → Settings → API Keys）
+3. **设置 → AI 服务 → Cline Upstream** → 点 **「获取列表」** → 勾选要用的 `cline-pass/*` 模型 → 保存
 
-Cline 的公开 API 文档里 `POST /chat/completions` 只列出 5 个 body 参数
-（`model` / `messages` / `stream` / `tools` / `temperature`），**没有** provider 路由字段。
-也就是说 `provider.only` 属于未公开行为，是否被接受取决于网关实现。
-
-所以这个插件不承诺「一定钉住」，而是把结果摊开：能钉住就显示「已生效」，钉不住就显示「未生效」。
-无论哪种结果，你都拿到了真相 —— 这比一个说不出所以然的开关有用。
-
-## 安装
-
-1. 插件页 → 安装 `cline-upstream-0.1.0.piplug`
-2. 设置 → **AI 服务** → 「Cline Upstream」→ 填入你的 **ClinePass API Key**
-   （在 [app.cline.bot](https://app.cline.bot) → Settings → API Keys 生成）
-3. 把模型切到该服务商下的 `cline-pass/deepseek-v4.1-flash` 等模型，随便发一句话
-4. 命令面板运行 **Cline Upstream: 打开面板**，或者从插件卡片打开
+之后把模型切到该服务商的任意 `cline-pass/*` 模型即可。面板用命令 **Cline Upstream: 打开面板** 打开。
 
 ## 面板怎么读
 
 | 列 | 说明 |
 |---|---|
-| 实际落点 | 本次真正服务的上游；绿色边框表示与你的目标一致 |
+| 实际落点 | 本次真正服务的上游；绿色表示与你的目标一致 |
 | 钉住 | 网关自己报告的会话钉选上游 |
-| 备选 | `fallbacksAvailable` 的数量 —— 大于 0 意味着上游不可用时仍会降级 |
+| 备选 | `fallbacksAvailable` 数量 —— 大于 0 表示上游不可用时仍会降级 |
 | 缓存命中 | `promptCacheHitTokens`。钉住同一上游才会连续命中，这是省钱的关键指标 |
 | 成本 | 本次 `cost`（已计入缓存折扣） |
 | 校验 | 仅观察 / 已生效 / 未生效 / 无元数据 |
 
+面板是只读的：目标上游与开关在 **设置 → 插件 → Cline 上游** 里改。
+
+## 为什么需要「校验」这一步
+
+Cline 的公开 API 文档里 `POST /chat/completions` 只列出 5 个 body 参数
+（`model` / `messages` / `stream` / `tools` / `temperature`），**没有** provider 路由字段。
+`provider.only` 属于未公开行为，是否被接受取决于网关实现。
+
+所以插件不承诺「一定钉住」，而是把结果摊开：能钉住就写「已生效」，钉不住就写「未生效」。
+
 ## 权限与隐私
 
-- 声明的权限：`ui.panel`、`background.service`、`provider.register`、`net.fetch`（仅 `127.0.0.1`）
-- **API Key 只在内存里透传，插件不落盘、不外发**
-- 出站流量只有一处：`api.cline.bot`（转发你的模型请求）
-- 落盘内容只有一份：插件数据目录下的 `routing-state.json`，记录每个模型最近一次
-  的路由结果（不含请求内容、不含凭据）
+- 权限：`ui.panel`、`background.service`、`provider.register`
+- 出站只有一处：`api.cline.bot`（转发你的模型请求、拉取模型目录）
+- **API Key 存在插件设置里（明文，`plugins/data/<id>/settings.json`）**，仅用于转发。
+  PI 自身的服务商 key 是加密存储的，而平台的凭据隔离规定插件拿不到宿主凭据，
+  因此走插件路径就必然由插件自持 key —— 这是取舍，不是疏漏。
+- 落盘还有一份 `routing-state.json`：每个模型最近一次的路由结果（不含请求内容与凭据）
 
-## 已知限制
+## 已知限制（平台边界，非本插件缺陷）
 
-- 只接管通过「Cline Upstream」这个服务商发起的请求；PI 里原有的 `cline` 服务商不受影响
-- 必须保留流式响应：插件会把 `accept-encoding` 去掉，以便读取响应里的 `routing` 块（体积换可观测性）
-- 写死的上游清单来自实测；网关新增上游后，面板会自动把它们补进下拉框
-- 「未生效」不等于插件出错 —— 它表示网关没有接受那个字段
+- 插件无法复用 PI 里已有服务商的 key：宿主明文规定 "The plugin never receives it"
+- 面板不能访问本机端点（`panel.egress` 一律拒绝），所以面板数据经插件设置通道传递
+- PI 本身不解析 Cline 的 `routing`（`finalProvider` 在应用代码里出现 0 次），
+  因此「看上游」只能由处在请求路径上的插件自己完成
+- 必须保留流式响应：插件会去掉 `accept-encoding` 以便读取 `routing`（体积换可观测性）
 
 ## 开发
 
 ```
-main.js            常驻服务 + loopback 转发 + routing 解析
-renderer/          面板（index.html / panel.css / panel.js）
-manifest.json      服务商声明（18 个 cline-pass 模型，参数取自 models.dev）
-```
-
-本机自测（不依赖 PI 宿主）：
-
-```powershell
-node scratch/plugin-smoke.js   # 见仓库内的冒烟脚本
+main.js           常驻服务 + loopback 转发 + routing 解析
+renderer/         面板（index.html / panel.css / panel.js）
+manifest.json     服务商声明（18 个内置 cline-pass 模型，参数取自 models.dev）
+dist/             打包产物（store-only zip，扩展名 .piplug）
 ```
 
 ## 许可
