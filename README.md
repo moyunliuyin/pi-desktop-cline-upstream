@@ -19,7 +19,7 @@ ClinePass 的同一个模型背后挂着二十多个上游（DeepSeek 官方、F
    | `cost` | 本次实际成本 |
 
 2. **选模型**：该服务商的 `/v1/models` 会**用你的 key 拉取上游真实目录**（只保留 `cline-pass/*`），
-   所以在 PI 里点「获取列表」就能勾选要用的模型；拉不到时退回内置的 18 个。
+   所以在 PI 里点「获取列表」就能勾选要用的模型；拉不到时退回清单里声明的那些。
 3. **选上游 + 验证**：填一个目标上游并打开「写入 routing 字段」，插件会加
    `provider: { only: ["<目标>"] }`（可选 `allow_fallbacks: false`），
    再用下一次响应的 `finalProvider` 校验，面板直接显示 **已生效 / 未生效**。
@@ -63,24 +63,24 @@ Cline 的公开 API 文档里 `POST /chat/completions` 只列出 5 个 body 参�
   因此走插件路径就必然由插件自持 key —— 这是取舍，不是疏漏。
 - 落盘还有一份 `routing-state.json`：每个模型最近一次的路由结果（不含请求内容与凭据）
 
-## 模型列表为什么改不动（宿主持有的数据）
+## 模型列表是怎么来的（宿主持有的数据）
 
-宿主的规则有两条，都已实测：
+宿主有两条规则，都已实测：
 
-1. **插件声明的服务商行是只读的。** 宿主源码注释原话是 "a plugin-declared row refuses a
-   generic update"，所以 PI 的服务商编辑界面改不了里面的模型，也没给删除入口。
-2. **模型只写一次：应用启动时按声明写进数据库。** 之后插件改写 manifest 或触发热重载，
-   都不会回头更新那一行（实测：改完文件等 18 秒，库里 18 条纹丝不动）。
+1. **插件声明的服务商行是只读的。** 宿主源码注释原文：`a plugin-declared row refuses a
+   generic update`。所以 PI 的服务商编辑界面改不了里面的模型，也没有删除入口。
+2. **模型在每次启动时按清单重建，运行期间不刷新。** 两条实测：
+   - 清单声明 1 个 → 重启后库里就是 1 条（`models` 表与 `config_json.models` 同步变化）
+   - 运行中改写 `manifest.json` → 等 18 秒，库里纹丝不动（热重载不触发同步）
 
-因此分两层：
+所以：**清单 = 下次启动后的下拉框。** 改完保存，重启 PI 才看得见。
 
 | 层 | 谁控制 | 什么时候生效 |
 |---|---|---|
 | 列表显示 | PI —— 启动时按 `manifest.json` 写入 `providers.config_json.models` | **重启 PI 之后** |
 | 是否可用 | 本插件（白名单） | 保存即生效，未勾选的模型一律 `404 model_not_enabled` |
 
-**想让下拉框变短**：面板勾选 → 保存（清单改成 N 个）→ **重启 PI**，下拉框就是 N 个。
-不重启的话，PI 依然按上一次启动时的清单显示 —— 这不是插件偷懒，是宿主没提供刷新入口。
+默认清单只放 8 个常用模型，就是为了让新装用户不必先面对一屏模型再想办法删。
 
 ## 已知限制（平台边界，非本插件缺陷）
 
@@ -95,7 +95,7 @@ Cline 的公开 API 文档里 `POST /chat/completions` 只列出 5 个 body 参�
 ```
 main.js           常驻服务 + loopback 转发 + routing 解析
 renderer/         面板（index.html / panel.css / panel.js）
-manifest.json     服务商声明（18 个内置 cline-pass 模型，参数取自 models.dev）
+manifest.json     服务商声明（默认 8 个常用 cline-pass 模型，参数取自 models.dev）
 dist/             打包产物（store-only zip，扩展名 .piplug）
 ```
 

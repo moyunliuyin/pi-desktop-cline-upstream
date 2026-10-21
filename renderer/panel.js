@@ -207,11 +207,12 @@ function renderModels(settings) {
     return;
   }
   const checkedCount = available.filter((id) => draft.models.has(id)).length;
-  el.modelsHint.textContent =
-    (checkedCount === available.length
-      ? `共 ${available.length} 个，全部启用`
-      : `共 ${available.length} 个，已选 ${checkedCount} 个（未选的会被插件拒绝）`) +
-    " · 改清单后需重启 PI 才同步到模型下拉框";
+  const effCount = checkedCount === 0 ? available.length : checkedCount;
+  const scope =
+    checkedCount === available.length || checkedCount === 0
+      ? "全部启用"
+      : `已选 ${checkedCount} 个（未勾选的请求被拒绝）`;
+  el.modelsHint.textContent = `共 ${available.length} 个，${scope} · 重启 PI 后模型下拉框 = ${effCount} 个`;
 
   const frag = document.createDocumentFragment();
   for (const id of available) {

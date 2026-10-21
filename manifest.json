@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.moyunliuyin.cline-upstream",
   "name": "Cline Upstream",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "随插件启动的 ClinePass 本机桥接：显示每个请求落在哪个真实上游、还有哪些备选，可按勾选锚定上游并限制可用模型。改模型清单后需重启 PI 生效。",
   "author": "moyunliuyin",
   "license": "MIT",
@@ -238,21 +238,6 @@
         "authKind": "none",
         "models": [
           {
-            "id": "cline-pass/deepseek-v4-flash",
-            "name": "DeepSeek V4 Flash",
-            "contextWindow": 1000000,
-            "maxTokens": 384000,
-            "supportsImages": false,
-            "thinkingLevels": [
-              "off",
-              "none",
-              "low",
-              "high",
-              "max"
-            ],
-            "defaultThinkingLevel": "high"
-          },
-          {
             "id": "cline-pass/deepseek-v4-pro",
             "name": "DeepSeek V4 Pro",
             "contextWindow": 1000000,
@@ -282,20 +267,6 @@
             "defaultThinkingLevel": "high"
           },
           {
-            "id": "cline-pass/glm-5.2",
-            "name": "GLM-5.2",
-            "contextWindow": 1000000,
-            "maxTokens": 131072,
-            "supportsImages": false,
-            "thinkingLevels": [
-              "off",
-              "none",
-              "high",
-              "max"
-            ],
-            "defaultThinkingLevel": "high"
-          },
-          {
             "id": "cline-pass/glm-5.3",
             "name": "GLM-5.3",
             "contextWindow": 1000000,
@@ -308,31 +279,6 @@
               "max"
             ],
             "defaultThinkingLevel": "high"
-          },
-          {
-            "id": "cline-pass/glm-5.3-flash",
-            "name": "cline-pass/glm-5.3-flash",
-            "contextWindow": 1000000,
-            "maxTokens": 131072,
-            "supportsImages": true,
-            "thinkingLevels": [
-              "off",
-              "low",
-              "high",
-              "max"
-            ],
-            "defaultThinkingLevel": "high"
-          },
-          {
-            "id": "cline-pass/kimi-k2.6",
-            "name": "Kimi K2.6",
-            "contextWindow": 262144,
-            "maxTokens": 262144,
-            "supportsImages": true,
-            "thinkingLevels": [
-              "off"
-            ],
-            "defaultThinkingLevel": "off"
           },
           {
             "id": "cline-pass/kimi-k2.7-code",
@@ -357,44 +303,6 @@
               "low",
               "high",
               "max"
-            ],
-            "defaultThinkingLevel": "high"
-          },
-          {
-            "id": "cline-pass/mimo-v2.5",
-            "name": "MiMo-V2.5",
-            "contextWindow": 1048576,
-            "maxTokens": 131072,
-            "supportsImages": true,
-            "thinkingLevels": [
-              "off"
-            ],
-            "defaultThinkingLevel": "off"
-          },
-          {
-            "id": "cline-pass/mimo-v2.5-pro",
-            "name": "MiMo-V2.5-Pro",
-            "contextWindow": 1048576,
-            "maxTokens": 131072,
-            "supportsImages": false,
-            "thinkingLevels": [
-              "off"
-            ],
-            "defaultThinkingLevel": "off"
-          },
-          {
-            "id": "cline-pass/mimo-v2.6-flash",
-            "name": "MiMo-V2.6-Flash",
-            "contextWindow": 1048576,
-            "maxTokens": 131072,
-            "supportsImages": true,
-            "thinkingLevels": [
-              "off",
-              "none",
-              "low",
-              "medium",
-              "high",
-              "xhigh"
             ],
             "defaultThinkingLevel": "high"
           },
@@ -426,44 +334,6 @@
             "defaultThinkingLevel": "off"
           },
           {
-            "id": "cline-pass/muse-spark-1.3-contributor",
-            "name": "Muse Spark 1.3 Contributor",
-            "contextWindow": 1048576,
-            "maxTokens": 131072,
-            "supportsImages": true,
-            "thinkingLevels": [
-              "off",
-              "minimal",
-              "low",
-              "medium",
-              "high",
-              "xhigh"
-            ],
-            "defaultThinkingLevel": "high"
-          },
-          {
-            "id": "cline-pass/qwen3.7-max",
-            "name": "Qwen3.7 Max",
-            "contextWindow": 1000000,
-            "maxTokens": 65536,
-            "supportsImages": false,
-            "thinkingLevels": [
-              "off"
-            ],
-            "defaultThinkingLevel": "off"
-          },
-          {
-            "id": "cline-pass/qwen3.7-plus",
-            "name": "Qwen3.7 Plus",
-            "contextWindow": 1000000,
-            "maxTokens": 64000,
-            "supportsImages": true,
-            "thinkingLevels": [
-              "off"
-            ],
-            "defaultThinkingLevel": "off"
-          },
-          {
             "id": "cline-pass/qwen3.8-max",
             "name": "Qwen3.8 Max",
             "contextWindow": 1000000,
@@ -483,7 +353,7 @@
       }
     ]
   },
-  "changelog": "卡片与面板写清能力与限制：按请求记录真实上游与备选、可锚定上游、未勾选模型在转发层直接拒绝；模型清单改动需重启 PI 才同步到模型下拉框。",
+  "changelog": "默认清单收敛到 8 个常用模型（新装用户不再一次出现 18 条）；面板写明清单在下次启动时生效。宿主的实际机制为启动时按清单重建。",
   "homepage": "https://github.com/moyunliuyin/pi-desktop-cline-upstream",
   "repository": "https://github.com/moyunliuyin/pi-desktop-cline-upstream"
 }

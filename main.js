@@ -138,6 +138,10 @@ function publishModels(ids) {
   }
   const providers = (doc.contributes && doc.contributes.providers) || [];
   if (!providers.length) return;
+  if (!ids.length) {
+    log("warn", "declaration not written: empty model selection");
+    return;
+  }
   const known = new Map(declaredModels().map((m) => [m.id, m]));
   const next = ids.map((id) => {
     const src = known.get(id) || {};
