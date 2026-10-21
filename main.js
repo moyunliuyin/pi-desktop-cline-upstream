@@ -299,7 +299,7 @@ function parseRouting(body) {
 
 function recordResult(model, routing, injected, statusCode) {
   if (!model) return;
-  const preferred = settings.preferredUpstream || "";
+  const preferred = selectedUpstreams().join(" / ");
   const entry = {
     at: Date.now(),
     statusCode,
@@ -315,7 +315,10 @@ function recordResult(model, routing, injected, statusCode) {
     cacheMissTokens: routing ? routing.cacheMissTokens : null,
     cost: routing ? routing.cost : null,
     injected: injected ? preferred : null,
-    matched: injected && routing && routing.finalProvider ? routing.finalProvider === preferred : null,
+    matched:
+      injected && routing && routing.finalProvider
+        ? selectedUpstreams().indexOf(routing.finalProvider) !== -1
+        : null,
     requests: ((state.models[model] && state.models[model].requests) || 0) + 1,
   };
 
@@ -383,13 +386,21 @@ function forwardHeaders(headers) {
   return out;
 }
 
+/** 目标上游可以是多个：provider.only 本身就是白名单数组。 */
+function selectedUpstreams() {
+  return String(settings.preferredUpstream || "")
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function injectRouting(model, payload) {
   if (!settings.injectRouting) return false;
-  const preferred = (settings.preferredUpstream || "").trim();
-  if (!preferred) return false;
+  const list = selectedUpstreams();
+  if (list.length === 0) return false;
   if (typeof model !== "string" || !model.startsWith("cline-pass/")) return false;
 
-  const provider = { only: [preferred] };
+  const provider = { only: list };
   if (settings.hardPin) provider.allow_fallbacks = false;
   payload.provider = provider;
   return true;
@@ -711,6 +722,15 @@ async function onPanelInvoke(channel, payload) {
       await pi.plugin.setSettings(settings);
     }
     return { ok: true, settings };
+  }
+  if (name === "applyModels") {
+    return new Promise((resolve) => {
+      fetchCatalog((ids) => {
+        const exposed = filterIds(ids);
+        publishModels(exposed);
+        resolve({ ok: true, applied: exposed.length, available: ids.length });
+      });
+    });
   }
   if (name === "readState") {
     return {

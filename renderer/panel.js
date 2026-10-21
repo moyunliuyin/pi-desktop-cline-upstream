@@ -1,11 +1,15 @@
 "use strict";
 
 /**
- * Cline Upstream — panel (interactive).
+ * Cline Upstream — panel (draft + save).
  *
- * Read path: `plugin.getSettings` is a host bridge channel.
- * Write path: the app forwards unknown channels to the plugin's
- * `onPanelInvoke`, so writes go through `writeSettings` and land in main.js.
+ * Ticking a box only mutates a local draft; nothing is written until 保存.
+ * Saving writes the settings once and then asks the plugin to re-apply them
+ * (fetch the catalog and republish the declaration) in a single hot reload,
+ * which is what makes the model selection actually take effect.
+ *
+ * Read path: `plugin.getSettings` (host bridge channel).
+ * Write path: `writeSettings` / `applyModels` → plugin's onPanelInvoke.
  */
 
 const KNOWN_UPSTREAMS = [
@@ -19,9 +23,11 @@ const el = {
   status: document.getElementById("status"),
   pulse: document.getElementById("pulse"),
   refresh: document.getElementById("refresh"),
+  save: document.getElementById("save"),
   inject: document.getElementById("inject"),
   hardPin: document.getElementById("hardPin"),
   toast: document.getElementById("toast"),
+  dirty: document.getElementById("dirty"),
   hint: document.getElementById("hint"),
   upstreams: document.getElementById("upstreams"),
   models: document.getElementById("models"),
@@ -32,6 +38,8 @@ const el = {
 };
 
 let current = {};
+let draft = null;
+let dirty = false;
 let busy = false;
 
 /* ----------------------------------------------------------------- bridge */
@@ -52,17 +60,9 @@ async function readSettings() {
   return s && typeof s === "object" ? s : {};
 }
 
-async function writeSettings(patch) {
-  const next = Object.assign({}, current, patch);
-  const result = await invoke("writeSettings", next);
-  if (result && result.settings) current = result.settings;
-  else current = next;
-  render();
-}
-
 /* ----------------------------------------------------------------- utils */
 
-function splitModels(value) {
+function splitList(value) {
   return String(value || "")
     .split(/[\s,]+/)
     .map((s) => s.trim())
@@ -97,32 +97,46 @@ function setStatus(text, mode) {
   el.pulse.className = "pulse" + (mode === "live" ? " live" : mode === "down" ? " down" : "");
 }
 
-function checkRow(id, checked, labelText, metaText, onChange) {
-  const label = document.createElement("label");
-  label.className = "model";
-  const box = document.createElement("input");
-  box.type = "checkbox";
-  box.checked = checked;
-  box.addEventListener("change", () => {
-    if (busy) return;
-    onChange(box.checked);
-  });
-  const text = document.createElement("span");
-  text.textContent = labelText;
-  label.append(box, text);
-  if (metaText) {
-    const meta = document.createElement("em");
-    meta.className = "meta";
-    meta.textContent = metaText;
-    label.appendChild(meta);
-  }
-  if (id) label.dataset.id = id;
-  return label;
+function markDirty() {
+  dirty = true;
+  el.dirty.classList.add("on");
+  el.save.disabled = false;
+}
+
+function clearDirty() {
+  dirty = false;
+  el.dirty.classList.remove("on");
+  el.save.disabled = true;
+}
+
+/* ----------------------------------------------------------------- draft */
+
+function snapshotOf(settings) {
+  return parseSnapshot(settings);
+}
+
+function availableModels(settings) {
+  const snap = snapshotOf(settings);
+  return (snap && snap.available) || [];
+}
+
+function makeDraft(settings) {
+  const available = availableModels(settings);
+  const chosen = splitList(settings.enabledModels);
+  return {
+    upstreams: new Set(splitList(settings.preferredUpstream)),
+    modelsAll: chosen.length === 0,
+    models: new Set(chosen.length === 0 ? available : chosen),
+    inject: Boolean(settings.injectRouting),
+    hardPin: Boolean(settings.hardPin),
+    toast: settings.toastOnMismatch !== false,
+  };
 }
 
 /* ---------------------------------------------------------------- render */
 
-function detectedUpstreams(snapshot) {
+function detectedUpstreams(settings) {
+  const snap = snapshotOf(settings);
   const counts = new Map();
   const bump = (name, kind) => {
     if (!name) return;
@@ -130,7 +144,7 @@ function detectedUpstreams(snapshot) {
     row[kind] += 1;
     counts.set(name, row);
   };
-  for (const entry of Object.values((snapshot && snapshot.models) || {})) {
+  for (const entry of Object.values((snap && snap.models) || {})) {
     bump(entry.finalProvider, "final");
     bump(entry.pinnedProvider, "pinned");
     for (const name of entry.fallbacks || []) bump(name, "fallback");
@@ -140,8 +154,27 @@ function detectedUpstreams(snapshot) {
   );
 }
 
-function renderUpstreamChecks(settings, detected) {
-  const target = settings.preferredUpstream || "";
+function checkRow(checked, labelText, metaText, onChange) {
+  const label = document.createElement("label");
+  label.className = "model" + (checked ? " on" : "");
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = checked;
+  box.addEventListener("change", () => onChange(box.checked));
+  const text = document.createElement("span");
+  text.textContent = labelText;
+  label.append(box, text);
+  if (metaText) {
+    const meta = document.createElement("em");
+    meta.className = "meta";
+    meta.textContent = metaText;
+    label.appendChild(meta);
+  }
+  return label;
+}
+
+function renderUpstreams(settings) {
+  const detected = detectedUpstreams(settings);
   const names = [];
   const seen = new Set();
   for (const d of detected) {
@@ -150,61 +183,52 @@ function renderUpstreamChecks(settings, detected) {
   for (const n of KNOWN_UPSTREAMS) {
     if (!seen.has(n)) { seen.add(n); names.push(n); }
   }
+  const meta = new Map(detected.map((d) => [d.name, `${d.final}/${d.pinned}/${d.fallback}`]));
 
   const frag = document.createDocumentFragment();
-  const meta = new Map(detected.map((d) => [d.name, `${d.final}/${d.pinned}/${d.fallback}`]));
-  frag.appendChild(
-    checkRow("", target === "", "不指定（只观察）", "", (checked) =>
-      writeSettings({ preferredUpstream: checked ? "" : "" }).catch(fail)
-    )
-  );
   for (const name of names) {
     frag.appendChild(
-      checkRow(name, target === name, name, meta.get(name) || "0/0/0", (checked) => {
-        // 单选：勾上即设为目标并开启写入；取消勾选等于回到不指定
-        writeSettings(checked
-          ? { preferredUpstream: name, injectRouting: true }
-          : { preferredUpstream: "" }
-        ).catch(fail);
+      checkRow(draft.upstreams.has(name), name, meta.get(name) || "0/0/0", (checked) => {
+        if (checked) draft.upstreams.add(name);
+        else draft.upstreams.delete(name);
+        markDirty();
+        renderUpstreams(settings);
       })
     );
   }
   el.upstreams.replaceChildren(frag);
 }
 
-function renderModels(settings, snapshot) {
-  const available = (snapshot && snapshot.available) || [];
+function renderModels(settings) {
+  const available = availableModels(settings);
   if (available.length === 0) {
     el.models.replaceChildren();
-    el.modelsHint.textContent = "还没有模型目录：插件载入后会自己拉取（失败则用内置 18 个）。";
+    el.modelsHint.textContent = "还没有模型目录：插件载入后会自己拉取（失败则用内置）。";
     return;
   }
-  const chosen = splitModels(settings.enabledModels);
-  const all = chosen.length === 0;
-  el.modelsHint.textContent = all
-    ? `共 ${available.length} 个可用模型，当前全部启用`
-    : `共 ${available.length} 个可用模型，当前启用 ${chosen.length} 个`;
+  const checkedCount = available.filter((id) => draft.models.has(id)).length;
+  el.modelsHint.textContent =
+    checkedCount === available.length
+      ? `共 ${available.length} 个，全部启用`
+      : `共 ${available.length} 个，已选 ${checkedCount} 个`;
 
   const frag = document.createDocumentFragment();
   for (const id of available) {
     frag.appendChild(
-      checkRow(id, all || chosen.includes(id), id, "", (checked) => {
-        const base = splitModels(current.enabledModels);
-        const seed = base.length === 0 ? available.slice() : base;
-        const next = new Set(seed);
-        if (checked) next.add(id);
-        else next.delete(id);
-        let list = [...next];
-        if (list.length === available.length) list = [];
-        writeSettings({ enabledModels: list.join(",") }).catch(fail);
+      checkRow(draft.models.has(id), id, "", (checked) => {
+        if (checked) draft.models.add(id);
+        else draft.models.delete(id);
+        markDirty();
+        renderModels(settings);
       })
     );
   }
   el.models.replaceChildren(frag);
 }
 
-function renderTable(snapshot) {
-  const models = (snapshot && snapshot.models) || {};
+function renderTable(settings) {
+  const snap = snapshotOf(settings);
+  const models = (snap && snap.models) || {};
   const entries = Object.entries(models).sort((a, b) => (b[1].at || 0) - (a[1].at || 0));
   if (entries.length === 0) {
     const tr = document.createElement("tr");
@@ -255,53 +279,60 @@ function renderTable(snapshot) {
   el.rows.replaceChildren(frag);
 }
 
-function render() {
-  const settings = current || {};
-  const snapshot = parseSnapshot(settings);
-  const detected = detectedUpstreams(snapshot);
-
-  renderUpstreamChecks(settings, detected);
-  renderModels(settings, snapshot);
-  renderTable(snapshot);
-
-  el.inject.checked = Boolean(settings.injectRouting);
-  el.hardPin.checked = Boolean(settings.hardPin);
-  el.toast.checked = settings.toastOnMismatch !== false;
-
-  const rows = Object.keys((snapshot && snapshot.models) || {}).length;
-  el.footLeft.textContent = rows === 0 ? "尚无请求记录" : `已记录 ${rows} 个模型`;
-  el.footRight.textContent = snapshot && snapshot.at
-    ? "最近更新 " + new Date(snapshot.at).toLocaleTimeString()
-    : "等待第一次请求";
-
+function renderHints(settings) {
   const hasKey = Boolean(settings.apiKey);
-  const target = settings.preferredUpstream;
+  const targets = splitList(settings.preferredUpstream);
   if (!hasKey) {
     el.hint.className = "hint warn";
     el.hint.textContent = "还没有填写 ClinePass API Key：设置 → 插件 → Cline 上游。没有 key 时插件无法转发请求。";
-  } else if (target && settings.injectRouting) {
+  } else if (targets.length && settings.injectRouting) {
     el.hint.className = "hint";
-    el.hint.textContent = `正在把请求钉到「${target}」，每次响应都会用 finalProvider 自动校验是否生效。`;
-  } else if (target) {
+    el.hint.textContent = `正在把请求限制在「${targets.join(" / ")}」内（provider.only），每次响应都会自动校验落点是否在名单里。`;
+  } else if (targets.length) {
     el.hint.className = "hint";
-    el.hint.textContent = `已选目标「${target}」但未开启写入，当前只观察。`;
+    el.hint.textContent = `已选目标「${targets.join(" / ")}」但未开启写入，当前只观察。`;
   } else {
     el.hint.className = "hint";
-    el.hint.textContent = "勾选上面的上游即设为锚定目标（单选）。数据来自 Cline 网关自己返回的 routing 元数据。";
+    el.hint.textContent = "勾选上游（可多选）后点保存即写入 provider.only；全都不勾表示只观察，不干预路由。";
   }
+}
+
+function render() {
+  const settings = current || {};
+  const snap = snapshotOf(settings);
+  renderUpstreams(settings);
+  renderModels(settings);
+  renderTable(settings);
+  renderHints(settings);
+
+  el.inject.checked = draft.inject;
+  el.hardPin.checked = draft.hardPin;
+  el.toast.checked = draft.toast;
+
+  const rows = Object.keys((snap && snap.models) || {}).length;
+  el.footLeft.textContent = rows === 0 ? "尚无请求记录" : `已记录 ${rows} 个模型`;
+  el.footRight.textContent = snap && snap.at
+    ? "最近更新 " + new Date(snap.at).toLocaleTimeString()
+    : "等待第一次请求";
 }
 
 /* ------------------------------------------------------------------- ops */
 
 function fail(error) {
-  setStatus("写入失败", "down");
+  setStatus("失败", "down");
   el.hint.className = "hint warn";
-  el.hint.textContent = "写入插件设置失败：" + (error && error.message ? error.message : error);
+  el.hint.textContent = (error && error.message ? error.message : String(error));
 }
 
-async function refresh() {
+async function refresh(keepDraft) {
   try {
-    current = await readSettings();
+    const next = await readSettings();
+    const first = !current || !current.routingSnapshot;
+    const availableChanged =
+      JSON.stringify(availableModels(next)) !== JSON.stringify(availableModels(current));
+    current = next;
+    if (!draft || first || (availableChanged && !dirty)) draft = makeDraft(current);
+    if (!keepDraft && !dirty) draft = makeDraft(current);
     render();
     setStatus("已连接", "live");
   } catch (error) {
@@ -310,28 +341,55 @@ async function refresh() {
   }
 }
 
-async function guard(fn) {
+async function save() {
   if (busy) return;
   busy = true;
+  el.save.disabled = true;
   try {
-    await fn();
-    setStatus("已保存", "live");
-    setTimeout(() => setStatus("已连接", "live"), 1200);
+    const available = availableModels(current);
+    const all = available.length > 0 && available.every((id) => draft.models.has(id));
+    const patch = {
+      preferredUpstream: [...draft.upstreams].join(","),
+      enabledModels: all ? "" : [...draft.models].join(","),
+      injectRouting: draft.inject,
+      hardPin: draft.hardPin,
+      toastOnMismatch: draft.toast,
+    };
+    const res = await invoke("writeSettings", patch);
+    if (res && res.settings) current = res.settings;
+    clearDirty();
+    setStatus("已保存，正在应用…", "live");
+    const applied = await invoke("applyModels");
+    setStatus("已应用", "live");
+    if (applied && typeof applied.applied === "number") {
+      el.hint.className = "hint";
+      el.hint.textContent = `已应用：服务商模型表更新为 ${applied.applied} 个（可用 ${applied.available} 个）。`;
+    }
+    await refresh(true);
   } catch (error) {
     fail(error);
   } finally {
     busy = false;
+    el.save.disabled = !dirty;
   }
 }
 
 /* ------------------------------------------------------------------ boot */
 
-el.refresh.addEventListener("click", refresh);
-el.inject.addEventListener("change", () => guard(() => writeSettings({ injectRouting: el.inject.checked })));
-el.hardPin.addEventListener("change", () => guard(() => writeSettings({ hardPin: el.hardPin.checked })));
-el.toast.addEventListener("change", () => guard(() => writeSettings({ toastOnMismatch: el.toast.checked })));
+function bindDraftSwitch(node, key) {
+  node.addEventListener("change", () => {
+    draft[key] = node.checked;
+    markDirty();
+  });
+}
+
+el.refresh.addEventListener("click", () => refresh(false));
+el.save.addEventListener("click", save);
+bindDraftSwitch(el.inject, "inject");
+bindDraftSwitch(el.hardPin, "hardPin");
+bindDraftSwitch(el.toast, "toast");
 
 (async function boot() {
-  await refresh();
-  setInterval(refresh, 4000);
+  await refresh(false);
+  setInterval(() => { if (!dirty) refresh(true); }, 4000);
 })();
