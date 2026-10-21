@@ -461,3 +461,10 @@ select:focus {
 .model:hover { color: var(--text); }
 
 .dim.small { color: var(--text-faint); font-size: 12px; margin: 0; }
+
+.model .meta {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}

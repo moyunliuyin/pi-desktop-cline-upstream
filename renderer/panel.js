@@ -3,9 +3,9 @@
 /**
  * Cline Upstream — panel (interactive).
  *
- * Reads the snapshot the plugin publishes into its own settings and writes user
- * choices back through `plugin.setSettings`. Panels may not reach loopback, so
- * settings are the channel in both directions.
+ * Read path: `plugin.getSettings` is a host bridge channel.
+ * Write path: the app forwards unknown channels to the plugin's
+ * `onPanelInvoke`, so writes go through `writeSettings` and land in main.js.
  */
 
 const KNOWN_UPSTREAMS = [
@@ -19,7 +19,6 @@ const el = {
   status: document.getElementById("status"),
   pulse: document.getElementById("pulse"),
   refresh: document.getElementById("refresh"),
-  target: document.getElementById("target"),
   inject: document.getElementById("inject"),
   hardPin: document.getElementById("hardPin"),
   toast: document.getElementById("toast"),
@@ -55,8 +54,9 @@ async function readSettings() {
 
 async function writeSettings(patch) {
   const next = Object.assign({}, current, patch);
-  await invoke("plugin.setSettings", next);
-  current = next;
+  const result = await invoke("writeSettings", next);
+  if (result && result.settings) current = result.settings;
+  else current = next;
   render();
 }
 
@@ -92,22 +92,32 @@ function fmtCost(v) {
   return "$" + (n < 0.01 ? n.toFixed(5) : n.toFixed(4));
 }
 
-function fmtAgo(ts) {
-  if (!ts) return "—";
-  const d = Date.now() - Number(ts);
-  if (!Number.isFinite(d) || d < 0) return "—";
-  const s = Math.floor(d / 1000);
-  if (s < 60) return s + " 秒前";
-  const m = Math.floor(s / 60);
-  if (m < 60) return m + " 分钟前";
-  const h = Math.floor(m / 60);
-  if (h < 24) return h + " 小时前";
-  return Math.floor(h / 24) + " 天前";
-}
-
 function setStatus(text, mode) {
   el.status.textContent = text;
   el.pulse.className = "pulse" + (mode === "live" ? " live" : mode === "down" ? " down" : "");
+}
+
+function checkRow(id, checked, labelText, metaText, onChange) {
+  const label = document.createElement("label");
+  label.className = "model";
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = checked;
+  box.addEventListener("change", () => {
+    if (busy) return;
+    onChange(box.checked);
+  });
+  const text = document.createElement("span");
+  text.textContent = labelText;
+  label.append(box, text);
+  if (metaText) {
+    const meta = document.createElement("em");
+    meta.className = "meta";
+    meta.textContent = metaText;
+    label.appendChild(meta);
+  }
+  if (id) label.dataset.id = id;
+  return label;
 }
 
 /* ---------------------------------------------------------------- render */
@@ -130,48 +140,34 @@ function detectedUpstreams(snapshot) {
   );
 }
 
-function renderTarget(settings, detected) {
-  const names = new Set([...KNOWN_UPSTREAMS, ...detected.map((d) => d.name)]);
-  if (settings.preferredUpstream) names.add(settings.preferredUpstream);
-  const frag = document.createDocumentFragment();
-  const none = document.createElement("option");
-  none.value = "";
-  none.textContent = "不指定（只观察）";
-  frag.appendChild(none);
-  for (const name of [...names].sort()) {
-    const opt = document.createElement("option");
-    opt.value = name;
-    opt.textContent = name;
-    frag.appendChild(opt);
+function renderUpstreamChecks(settings, detected) {
+  const target = settings.preferredUpstream || "";
+  const names = [];
+  const seen = new Set();
+  for (const d of detected) {
+    if (!seen.has(d.name)) { seen.add(d.name); names.push(d.name); }
   }
-  el.target.replaceChildren(frag);
-  el.target.value = settings.preferredUpstream || "";
-}
+  for (const n of KNOWN_UPSTREAMS) {
+    if (!seen.has(n)) { seen.add(n); names.push(n); }
+  }
 
-function renderUpstreamList(detected, settings) {
-  if (detected.length === 0) {
-    const p = document.createElement("p");
-    p.className = "dim small";
-    p.textContent = "还没有探测到上游。发出一次请求后这里会列出网关实际用过和备选的全部上游。";
-    el.upstreams.replaceChildren(p);
-    return;
-  }
   const frag = document.createDocumentFragment();
-  for (const row of detected) {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "chip" + (row.name === settings.preferredUpstream ? " on" : "");
-    chip.title = `实际 ${row.final} 次 / 钉住 ${row.pinned} 次 / 备选 ${row.fallback} 次 — 点击设为锚定目标`;
-    const label = document.createElement("span");
-    label.textContent = row.name;
-    const meta = document.createElement("em");
-    meta.textContent = `${row.final}/${row.pinned}/${row.fallback}`;
-    chip.append(label, meta);
-    chip.addEventListener("click", () => {
-      if (busy) return;
-      writeSettings({ preferredUpstream: row.name, injectRouting: true }).catch(fail);
-    });
-    frag.appendChild(chip);
+  const meta = new Map(detected.map((d) => [d.name, `${d.final}/${d.pinned}/${d.fallback}`]));
+  frag.appendChild(
+    checkRow("", target === "", "不指定（只观察）", "", (checked) =>
+      writeSettings({ preferredUpstream: checked ? "" : "" }).catch(fail)
+    )
+  );
+  for (const name of names) {
+    frag.appendChild(
+      checkRow(name, target === name, name, meta.get(name) || "0/0/0", (checked) => {
+        // 单选：勾上即设为目标并开启写入；取消勾选等于回到不指定
+        writeSettings(checked
+          ? { preferredUpstream: name, injectRouting: true }
+          : { preferredUpstream: "" }
+        ).catch(fail);
+      })
+    );
   }
   el.upstreams.replaceChildren(frag);
 }
@@ -180,38 +176,29 @@ function renderModels(settings, snapshot) {
   const available = (snapshot && snapshot.available) || [];
   if (available.length === 0) {
     el.models.replaceChildren();
-    el.modelsHint.textContent =
-      "还没有模型目录。到 设置 → AI 服务 → Cline Upstream 点一次「获取列表」（插件会用你的 key 拉取真实目录）。";
+    el.modelsHint.textContent = "还没有模型目录：插件载入后会自己拉取（失败则用内置 18 个）。";
     return;
   }
   const chosen = splitModels(settings.enabledModels);
   const all = chosen.length === 0;
   el.modelsHint.textContent = all
-    ? `共 ${available.length} 个可用模型，当前全部启用（取消勾选可限制）`
+    ? `共 ${available.length} 个可用模型，当前全部启用`
     : `共 ${available.length} 个可用模型，当前启用 ${chosen.length} 个`;
 
   const frag = document.createDocumentFragment();
   for (const id of available) {
-    const label = document.createElement("label");
-    label.className = "model";
-    const box = document.createElement("input");
-    box.type = "checkbox";
-    box.checked = all || chosen.includes(id);
-    box.addEventListener("change", () => {
-      if (busy) return;
-      const base = splitModels(current.enabledModels);
-      const seed = base.length === 0 ? available.slice() : base;
-      const next = new Set(seed);
-      if (box.checked) next.add(id);
-      else next.delete(id);
-      let list = [...next];
-      if (list.length === available.length) list = [];
-      writeSettings({ enabledModels: list.join(",") }).catch(fail);
-    });
-    const text = document.createElement("span");
-    text.textContent = id;
-    label.append(box, text);
-    frag.appendChild(label);
+    frag.appendChild(
+      checkRow(id, all || chosen.includes(id), id, "", (checked) => {
+        const base = splitModels(current.enabledModels);
+        const seed = base.length === 0 ? available.slice() : base;
+        const next = new Set(seed);
+        if (checked) next.add(id);
+        else next.delete(id);
+        let list = [...next];
+        if (list.length === available.length) list = [];
+        writeSettings({ enabledModels: list.join(",") }).catch(fail);
+      })
+    );
   }
   el.models.replaceChildren(frag);
 }
@@ -273,8 +260,7 @@ function render() {
   const snapshot = parseSnapshot(settings);
   const detected = detectedUpstreams(snapshot);
 
-  renderTarget(settings, detected);
-  renderUpstreamList(detected, settings);
+  renderUpstreamChecks(settings, detected);
   renderModels(settings, snapshot);
   renderTable(snapshot);
 
@@ -301,7 +287,7 @@ function render() {
     el.hint.textContent = `已选目标「${target}」但未开启写入，当前只观察。`;
   } else {
     el.hint.className = "hint";
-    el.hint.textContent = "数据来自 Cline 网关自己返回的 routing 元数据。点上面的上游标签即可「设为锚定目标」，并在插件设置里填 key。";
+    el.hint.textContent = "勾选上面的上游即设为锚定目标（单选）。数据来自 Cline 网关自己返回的 routing 元数据。";
   }
 }
 
@@ -341,7 +327,6 @@ async function guard(fn) {
 /* ------------------------------------------------------------------ boot */
 
 el.refresh.addEventListener("click", refresh);
-el.target.addEventListener("change", () => guard(() => writeSettings({ preferredUpstream: el.target.value })));
 el.inject.addEventListener("change", () => guard(() => writeSettings({ injectRouting: el.inject.checked })));
 el.hardPin.addEventListener("change", () => guard(() => writeSettings({ hardPin: el.hardPin.checked })));
 el.toast.addEventListener("change", () => guard(() => writeSettings({ toastOnMismatch: el.toast.checked })));

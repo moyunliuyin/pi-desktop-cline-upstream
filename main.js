@@ -699,4 +699,27 @@ async function onUnload() {
   await stopServer();
 }
 
-module.exports = { onLoad, onUnload };
+/**
+ * 面板的 invoke 不是全部直达宿主：app 会把非固定通道转到插件的
+ * `onPanelInvoke`（见 plugin host 的 panel.invoke 分派）。写操作在这里承接。
+ */
+async function onPanelInvoke(channel, payload) {
+  const name = String(channel || "");
+  if (name === "writeSettings") {
+    applySettings(payload || {});
+    if (pi && pi.plugin && typeof pi.plugin.setSettings === "function") {
+      await pi.plugin.setSettings(settings);
+    }
+    return { ok: true, settings };
+  }
+  if (name === "readState") {
+    return {
+      ok: true,
+      settings,
+      available: state.availableModels || [],
+    };
+  }
+  throw new Error("unknown panel channel: " + name);
+}
+
+module.exports = { onLoad, onUnload, onPanelInvoke };

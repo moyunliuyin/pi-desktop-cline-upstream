@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.moyunliuyin.cline-upstream",
   "name": "Cline Upstream",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "把 ClinePass 的真实上游暴露出来：每个请求落在哪家、还有哪些备选，并按你的选择尝试钉住。",
   "author": "moyunliuyin",
   "license": "MIT",
@@ -483,7 +483,7 @@
       }
     ]
   },
-  "changelog": "加载时预热模型目录；勾选模型后 1.5 秒自动改写服务商声明，勾选即生效，无需再点「获取列表」。",
+  "changelog": "面板写设置改由插件 onPanelInvoke 承接（修复写入报错）；锚定上游改为勾选样式。",
   "homepage": "https://github.com/moyunliuyin/pi-desktop-cline-upstream",
   "repository": "https://github.com/moyunliuyin/pi-desktop-cline-upstream"
 }
