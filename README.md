@@ -62,9 +62,11 @@ Cline 公开文档的 `POST /chat/completions` 只列 5 个 body 参数，没有
 
 - 权限：`ui.panel`、`background.service`、`provider.register`
 - 出站只有一处：`api.cline.bot`（转发你的模型请求、拉取模型目录）
-- **API Key 存在插件设置里（明文，`plugins/data/<id>/settings.json`）**，仅用于转发。
-  PI 自身的服务商 key 是加密存储的，而平台的凭据隔离规定插件拿不到宿主凭据，
-  因此走插件路径就必然由插件自持 key —— 这是取舍，不是疏漏。
+- **API Key 加密存放**：Windows 上用 DPAPI（绑定当前登录用户）加密后写进
+  `plugins/data/<id>/settings.json` 的 `apiKeyEnc`，磁盘与下发快照里都只有密文；
+  插件启动时解密到内存，只在转发请求时使用。宿主对插件关闭了凭据通道（`secretRef` 插件侧不可访问），
+  所以这是插件路径下能做到的等效保护：文件被拷走或进备份都读不出明文，同一 Windows 账号下的进程仍可解密 —— 与 PI 自身同一级别。
+  非 Windows 平台没有等价机制，会退回明文并在日志里注明。
 - 落盘还有一份 `routing-state.json`：每个模型最近一次的路由结果（不含请求内容与凭据）
 
 ## 模型列表是怎么来的（宿主持有的数据）

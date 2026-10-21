@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.moyunliuyin.cline-upstream",
   "name": "Cline Upstream",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "把 ClinePass 的真实上游摊开看：每个请求落在哪个上游、还有多少备选、缓存命中与成本。可勾选目标上游探测路由字段，实测网关会忽略。",
   "author": "moyunliuyin",
   "license": "MIT",
@@ -79,6 +79,13 @@
         "key": "apiKey",
         "type": "string",
         "title": "ClinePass API Key（插件自己持有，仅用于转发）",
+        "default": "",
+        "scope": "plugin"
+      },
+      {
+        "key": "apiKeyEnc",
+        "type": "string",
+        "title": "加密后的 key（Windows DPAPI，插件自动维护，请勿手动修改）",
         "default": "",
         "scope": "plugin"
       },
@@ -353,7 +360,7 @@
       }
     ]
   },
-  "changelog": "面板改成逐条请求日志：一条请求一行（时间/模型/落点/备选/缓存/成本/校验），保留最近 60 条；模型名不再截断，面板加宽到 1040。",
+  "changelog": "API Key 改为加密存储：Windows 上用 DPAPI（绑定当前用户）加密后落盘，磁盘与快照里都只有密文，启动时解密到内存使用；旧版明文会在升级首启时自动加密。",
   "homepage": "https://github.com/moyunliuyin/pi-desktop-cline-upstream",
   "repository": "https://github.com/moyunliuyin/pi-desktop-cline-upstream"
 }

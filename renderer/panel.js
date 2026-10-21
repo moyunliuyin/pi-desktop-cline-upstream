@@ -300,7 +300,7 @@ function renderTable(settings) {
 }
 
 function renderHints(settings) {
-  const hasKey = Boolean(settings.apiKey);
+  const hasKey = Boolean(settings.apiKey || settings.apiKeyEnc);
   const targets = splitList(settings.preferredUpstream);
   if (!hasKey) {
     el.hint.className = "hint warn";

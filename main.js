@@ -16,6 +16,46 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
+const { execFile } = require("node:child_process");
+
+/* ---------------------------------------------------------- secret at rest */
+/**
+ * Windows 上用 DPAPI（绑定当前登录用户）加密 API Key 后再落盘，磁盘与快照里都只有密文；
+ * 插件启动时解密到内存里用。其它平台没有等价机制，保持明文并记日志说明。
+ */
+const CAN_SEAL = process.platform === "win32";
+const SEAL_SCRIPT =
+  "$s=[Console]::In.ReadToEnd(); $sec=ConvertTo-SecureString $s -AsPlainText -Force; ConvertFrom-SecureString $sec";
+const UNSEAL_SCRIPT =
+  "$b=[Console]::In.ReadToEnd(); $sec=ConvertTo-SecureString $b; $p=[System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec); [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($p)";
+
+function powerShell(script, input) {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+      { windowsHide: true, timeout: 20000 },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(String(stderr || error.message || "powershell failed").trim()));
+          return;
+        }
+        resolve(String(stdout).replace(/\r?\n$/, ""));
+      }
+    );
+    child.stdin.end(String(input));
+  });
+}
+
+async function sealKey(plain) {
+  if (!CAN_SEAL) throw new Error("dpapi unavailable on " + process.platform);
+  return powerShell(SEAL_SCRIPT, plain);
+}
+
+async function unsealKey(blob) {
+  if (!CAN_SEAL) throw new Error("dpapi unavailable on " + process.platform);
+  return powerShell(UNSEAL_SCRIPT, blob);
+}
 const SERVICE_ID = "provider-host";
 const HOST = "127.0.0.1";
 const PORT = 41891;
@@ -32,6 +72,7 @@ const DEFAULTS = {
   hardPin: false,
   toastOnMismatch: true,
   apiKey: "",
+  apiKeyEnc: "",
   enabledModels: "",
 };
 
@@ -89,6 +130,7 @@ function publishSnapshot() {
     snapshotTimer = null;
     if (!pi || !pi.plugin || typeof pi.plugin.setSettings !== "function") return;
     const payload = Object.assign({}, settings, {
+      apiKey: "",
       routingSnapshot: JSON.stringify({
         at: state.updatedAt,
         models: state.models,
@@ -615,6 +657,46 @@ function applySettings(next) {
   settings.enabled = next.enabled === undefined ? settings.enabled : Boolean(next.enabled);
 }
 
+/* -------------------------------------------------------------- key at rest */
+
+/** 把内存里的明文 key 加密写回宿主设置；磁盘上只保留密文。 */
+async function persistSealedKey() {
+  const plain = String(settings.apiKey || "").trim();
+  if (!plain) return false;
+  if (!CAN_SEAL) {
+    log("warn", "no dpapi on " + process.platform + "; api key stays plaintext in plugin settings");
+    return false;
+  }
+  try {
+    const blob = await sealKey(plain);
+    settings.apiKeyEnc = blob;
+    if (pi && pi.plugin && typeof pi.plugin.setSettings === "function") {
+      await pi.plugin.setSettings(Object.assign({}, settings, { apiKey: "" }));
+    }
+    log("info", "api key sealed with dpapi, blob chars " + blob.length);
+    return true;
+  } catch (error) {
+    log("warn", "api key seal failed: " + messageOf(error));
+    return false;
+  }
+}
+
+/** 启动时把密文解回内存；老版本留下的明文则顺手加密掉。 */
+async function hydrateKey() {
+  if (String(settings.apiKey || "").trim()) {
+    await persistSealedKey();
+    return;
+  }
+  const blob = String(settings.apiKeyEnc || "").trim();
+  if (!blob) return;
+  try {
+    settings.apiKey = String(await unsealKey(blob)).trim();
+    log("info", "api key unsealed from dpapi blob");
+  } catch (error) {
+    log("warn", "api key unseal failed: " + messageOf(error));
+  }
+}
+
 /* ----------------------------------------------------------------- server */
 
 function handle(req, res) {
@@ -746,6 +828,7 @@ async function onLoad() {
   try {
     if (pi && pi.plugin && typeof pi.plugin.getSettings === "function") {
       applySettings(await pi.plugin.getSettings());
+      await hydrateKey();
     }
   } catch (error) {
     log("warn", "getSettings failed: " + messageOf(error));
@@ -754,10 +837,17 @@ async function onLoad() {
   try {
     if (pi && pi.events && typeof pi.events.on === "function") {
       pi.events.on("plugin:settingsChanged", (next) => {
+        const incoming = next && typeof next === "object" ? Object.assign({}, next) : {};
+        const typedKey = typeof incoming.apiKey === "string" ? incoming.apiKey.trim() : "";
+        delete incoming.apiKey; // 明文 key 单独处理，不能被空串覆盖掉内存里的值
         const before = settings.enabledModels;
-        applySettings(next);
+        applySettings(incoming);
+        if (typedKey && typedKey !== settings.apiKey) {
+          settings.apiKey = typedKey;
+          void persistSealedKey();
+        }
         log("info", "settings updated from host");
-        // 勾选的模型变了就改写声明，让服务商模型表跟着变（防抖，避免连续点击反复热重载）
+        // 勾选的模型变了就改写声明（防抖，避免连续点击反复热重载）
         if (settings.enabledModels !== before) {
           if (declarationTimer) clearTimeout(declarationTimer);
           declarationTimer = setTimeout(() => {
@@ -833,10 +923,12 @@ async function onPanelInvoke(channel, payload) {
   const name = String(channel || "");
   if (name === "writeSettings") {
     applySettings(payload || {});
+    if (String(settings.apiKey || "").trim()) await persistSealedKey();
+    const safe = Object.assign({}, settings, { apiKey: "" });
     if (pi && pi.plugin && typeof pi.plugin.setSettings === "function") {
-      await pi.plugin.setSettings(settings);
+      await pi.plugin.setSettings(safe);
     }
-    return { ok: true, settings };
+    return { ok: true, settings: safe };
   }
   if (name === "applyModels") {
     return new Promise((resolve) => {
