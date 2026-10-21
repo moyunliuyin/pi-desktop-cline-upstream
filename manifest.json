@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "io.github.moyunliuyin.cline-upstream",
   "name": "Cline Upstream",
-  "version": "0.2.1",
-  "description": "把 ClinePass 的真实上游暴露出来：每个请求落在哪家、还有哪些备选，并按你的选择尝试钉住。",
+  "version": "0.2.2",
+  "description": "随插件启动的 ClinePass 本机桥接：显示每个请求落在哪个真实上游、还有哪些备选，可按勾选锚定上游并限制可用模型。改模型清单后需重启 PI 生效。",
   "author": "moyunliuyin",
   "license": "MIT",
   "main": "main.js",
@@ -22,12 +22,12 @@
   "i18n": {
     "en": {
       "name": "Cline Upstream",
-      "description": "Expose ClinePass real upstreams: which provider served each request, what else was available, and try to pin one.",
+      "description": "Loopback bridge for ClinePass: shows which real upstream served each request and what else was available, and can pin upstreams and limit which models are usable. Model-list changes apply after a PI restart.",
       "safetyNotes": "Runs a loopback OpenAI-compatible endpoint on 127.0.0.1:41891 and forwards chat requests to api.cline.bot. The ClinePass API key is passed through in memory only and is never written to disk by this plugin. Responses are read in memory to extract the gateway's routing metadata (finalProvider / pinnedProvider / fallbacksAvailable); the last result per model is stored in the plugin data directory. Nothing leaves the machine except requests to api.cline.bot."
     },
     "zh-CN": {
       "name": "Cline 上游",
-      "description": "把 ClinePass 的真实上游暴露出来：每个请求落在哪家、还有哪些备选，并按你的选择尝试钉住。",
+      "description": "随插件启动的 ClinePass 本机桥接：显示每个请求落在哪个真实上游、还有哪些备选，可按勾选锚定上游并限制可用模型。改模型清单后需重启 PI 生效。",
       "safetyNotes": "在本机 127.0.0.1:41891 跑一个 OpenAI 兼容端点，把对话请求转发到 api.cline.bot。你为该服务商填的 ClinePass API Key 只在内存中透传，插件不落盘。响应在内存中读取网关自己的路由元数据（finalProvider / pinnedProvider / fallbacksAvailable），只把每个模型的最近一次结果存到插件数据目录。除 api.cline.bot 与本地面板外不向任何地方发送数据。"
     }
   },
@@ -483,7 +483,7 @@
       }
     ]
   },
-  "changelog": "未勾选的模型在转发层直接拒绝（PI 的服务商模型表由宿主持有，插件改写清单不会更新它）；面板提示补充说明。",
+  "changelog": "卡片与面板写清能力与限制：按请求记录真实上游与备选、可锚定上游、未勾选模型在转发层直接拒绝；模型清单改动需重启 PI 才同步到模型下拉框。",
   "homepage": "https://github.com/moyunliuyin/pi-desktop-cline-upstream",
   "repository": "https://github.com/moyunliuyin/pi-desktop-cline-upstream"
 }

@@ -208,9 +208,10 @@ function renderModels(settings) {
   }
   const checkedCount = available.filter((id) => draft.models.has(id)).length;
   el.modelsHint.textContent =
-    checkedCount === available.length
+    (checkedCount === available.length
       ? `共 ${available.length} 个，全部启用`
-      : `共 ${available.length} 个，已选 ${checkedCount} 个（未选的会被插件拒绝）`;
+      : `共 ${available.length} 个，已选 ${checkedCount} 个（未选的会被插件拒绝）`) +
+    " · 改清单后需重启 PI 才同步到模型下拉框";
 
   const frag = document.createDocumentFragment();
   for (const id of available) {
@@ -363,7 +364,7 @@ async function save() {
     setStatus("已应用", "live");
     if (applied && typeof applied.applied === "number") {
       el.hint.className = "hint";
-      el.hint.textContent = `已应用：服务商模型表更新为 ${applied.applied} 个（可用 ${applied.available} 个）。`;
+      el.hint.textContent = `已保存：清单改为 ${applied.applied} 个（可用 ${applied.available} 个）。PI 的模型下拉框要重启 PI 后才会跟着变。`;
     }
     await refresh(true);
   } catch (error) {
