@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.moyunliuyin.cline-upstream",
   "name": "Cline Upstream",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "把 ClinePass 的真实上游暴露出来：每个请求落在哪家、还有哪些备选，并按你的选择尝试钉住。",
   "author": "moyunliuyin",
   "license": "MIT",
@@ -370,7 +370,7 @@
       }
     ]
   },
-  "changelog": "面板改为通过插件设置读取快照（面板不允许访问本机端点）；移除 net.fetch 权限。",
+  "changelog": "面板改用 pluginBridge.invoke('plugin.getSettings') 读取快照，修复读取插件设置失败。",
   "homepage": "https://github.com/moyunliuyin/pi-desktop-cline-upstream",
   "repository": "https://github.com/moyunliuyin/pi-desktop-cline-upstream"
 }

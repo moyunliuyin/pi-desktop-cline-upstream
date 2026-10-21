@@ -32,10 +32,16 @@ function bridge() {
 
 async function readSettings() {
   const b = bridge();
-  if (!b || !b.plugin || typeof b.plugin.getSettings !== "function") {
-    throw new Error("pluginBridge.plugin.getSettings 不可用");
+  if (!b || typeof b.invoke !== "function") {
+    throw new Error("pluginBridge.invoke 不可用");
   }
-  return (await b.plugin.getSettings()) || {};
+  const raw = await b.invoke("plugin.getSettings");
+  // 宿主可能把结果包一层；两种形状都吃
+  const settings =
+    (raw && typeof raw === "object" && raw.settings) ||
+    (raw && typeof raw === "object" && raw.value) ||
+    raw;
+  return settings && typeof settings === "object" ? settings : {};
 }
 
 function parseSnapshot(settings) {
