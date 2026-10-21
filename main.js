@@ -76,6 +76,7 @@ function loadState() {
 }
 
 let snapshotTimer = null;
+let declarationTimer = null;
 
 /**
  * Panels cannot reach loopback (the host denies panel egress to local hosts),
@@ -627,8 +628,18 @@ async function onLoad() {
   try {
     if (pi && pi.events && typeof pi.events.on === "function") {
       pi.events.on("plugin:settingsChanged", (next) => {
+        const before = settings.enabledModels;
         applySettings(next);
         log("info", "settings updated from host");
+        // 勾选的模型变了就改写声明，让服务商模型表跟着变（防抖，避免连续点击反复热重载）
+        if (settings.enabledModels !== before) {
+          if (declarationTimer) clearTimeout(declarationTimer);
+          declarationTimer = setTimeout(() => {
+            declarationTimer = null;
+            if (!state.availableModels || state.availableModels.length === 0) return;
+            publishModels(filterIds(state.availableModels));
+          }, 1500);
+        }
       });
     }
   } catch (error) {
