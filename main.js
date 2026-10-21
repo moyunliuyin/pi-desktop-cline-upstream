@@ -32,6 +32,7 @@ const DEFAULTS = {
   hardPin: false,
   toastOnMismatch: true,
   apiKey: "",
+  enabledModels: "",
 };
 
 let settings = Object.assign({}, DEFAULTS);
@@ -87,7 +88,7 @@ function publishSnapshot() {
     snapshotTimer = null;
     if (!pi || !pi.plugin || typeof pi.plugin.setSettings !== "function") return;
     const payload = Object.assign({}, settings, {
-      routingSnapshot: JSON.stringify({ at: state.updatedAt, models: state.models }),
+      routingSnapshot: JSON.stringify({ at: state.updatedAt, models: state.models, available: state.availableModels || [] }),
     });
     Promise.resolve(pi.plugin.setSettings(payload)).catch((error) => {
       log("warn", "could not publish snapshot: " + messageOf(error));
@@ -104,6 +105,21 @@ function saveState() {
     log("warn", "could not persist state: " + messageOf(error));
   }
   publishSnapshot();
+}
+
+function enabledModelSet() {
+  const raw = String(settings.enabledModels || "");
+  if (!raw.trim()) return null;
+  const ids = raw
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return ids.length ? new Set(ids) : null;
+}
+
+function filterByWhitelist(list) {
+  const set = enabledModelSet();
+  return set ? list.filter((m) => set.has(m.id)) : list;
 }
 
 function declaredModels() {
@@ -152,12 +168,15 @@ function parseRouting(body) {
   const window = body.slice(at, at + 8000);
 
   let fallbackCount = null;
+  let fallbackNames = [];
   const list = /"fallbacksAvailable"\s*:\s*\[([^\]]*)\]/.exec(window);
   if (list) {
-    fallbackCount = list[1]
+    fallbackNames = list[1]
       .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean).length;
+      .map((s) => s.trim().replace(/^"|"$/g, ""))
+      .filter(Boolean)
+      .slice(0, 40);
+    fallbackCount = fallbackNames.length;
   }
 
   return {
@@ -168,6 +187,7 @@ function parseRouting(body) {
     canonicalSlug: stringAfter(window, "canonicalSlug"),
     originalModelId: stringAfter(window, "originalModelId"),
     fallbackCount,
+    fallbacks: fallbackNames,
     modelAttemptCount: numberAfter(window, "modelAttemptCount"),
     providerAttemptCount: numberAfter(window, "providerAttemptCount"),
     cacheHitTokens: numberAfter(window, "promptCacheHitTokens"),
@@ -187,6 +207,7 @@ function recordResult(model, routing, injected, statusCode) {
     pinnedProvider: routing ? routing.pinnedProvider : null,
     canonicalSlug: routing ? routing.canonicalSlug : null,
     fallbackCount: routing ? routing.fallbackCount : null,
+    fallbacks: routing && Array.isArray(routing.fallbacks) ? routing.fallbacks : [],
     modelAttemptCount: routing ? routing.modelAttemptCount : null,
     providerAttemptCount: routing ? routing.providerAttemptCount : null,
     cacheHitTokens: routing ? routing.cacheHitTokens : null,
@@ -384,6 +405,7 @@ function applySettings(next) {
   settings.injectRouting = Boolean(settings.injectRouting);
   settings.hardPin = Boolean(settings.hardPin);
   settings.apiKey = String(settings.apiKey || "").trim();
+  settings.enabledModels = String(settings.enabledModels || "").trim();
   settings.enabled = next.enabled === undefined ? settings.enabled : Boolean(next.enabled);
 }
 
@@ -400,10 +422,11 @@ function handle(req, res) {
 
   if (req.method === "GET" && url === "/v1/models") {
     // PI 的「获取列表」会打这里。有 key 就拉上游真实目录，拿不到再退回内置清单。
-    const fallbackList = () => ({
-      object: "list",
-      data: declaredModels().map((m) => ({ id: m.id, object: "model", owned_by: "cline-pass" })),
-    });
+    const fallbackList = () => {
+      const seeded = declaredModels().map((m) => ({ id: m.id, object: "model", owned_by: "cline-pass" }));
+      state.availableModels = seeded.map((m) => m.id);
+      return { object: "list", data: filterByWhitelist(seeded) };
+    };
     if (!settings.apiKey) {
       writeJson(res, 200, fallbackList());
       return;
@@ -423,15 +446,16 @@ function handle(req, res) {
           try {
             const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
             const list = Array.isArray(parsed && parsed.data) ? parsed.data : [];
-            const mine = list.filter((m) => m && typeof m.id === "string" && m.id.startsWith("cline-pass/"));
-            if (mine.length === 0) {
+            const all = list.filter((m) => m && typeof m.id === "string" && m.id.startsWith("cline-pass/"));
+            if (all.length === 0) {
               writeJson(res, 200, fallbackList());
               return;
             }
-            state.modelCount = mine.length;
+            state.availableModels = all.map((m) => m.id);
+            saveState();
             writeJson(res, 200, {
               object: "list",
-              data: mine.map((m) => ({ id: m.id, object: "model", owned_by: "cline-pass" })),
+              data: filterByWhitelist(all.map((m) => ({ id: m.id, object: "model", owned_by: "cline-pass" }))),
             });
           } catch (error) {
             log("warn", "model list parse failed: " + messageOf(error));

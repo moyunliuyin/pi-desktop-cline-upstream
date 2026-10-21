@@ -17,21 +17,37 @@
 
     <section class="controls">
       <label class="field grow">
-        <span class="label">目标上游（在插件设置里修改）</span>
-        <input id="preferred" disabled placeholder="未设定 = 只观察" />
+        <span class="label">锚定到哪个上游</span>
+        <select id="target"></select>
       </label>
-      <label class="switch disabled">
-        <input type="checkbox" id="inject" disabled /><span>写入 routing 字段</span>
+      <label class="switch" title="在请求体里写入 provider.only">
+        <input type="checkbox" id="inject" /><span>写入 routing 字段</span>
       </label>
-      <label class="switch disabled">
-        <input type="checkbox" id="hardPin" disabled /><span>强制不降级</span>
+      <label class="switch" title="同时写入 allow_fallbacks: false">
+        <input type="checkbox" id="hardPin" /><span>强制不降级</span>
+      </label>
+      <label class="switch" title="实际落点与目标不一致时弹出提示">
+        <input type="checkbox" id="toast" /><span>不符时提示</span>
       </label>
     </section>
 
-    <p class="hint" id="hint">
-      数据来自 Cline 网关自己在响应里返回的 <code>routing</code> 元数据 —— 不是猜测。
-      把 PI 的模型切换到「Cline Upstream」服务商后发一条消息即可产生记录。
-    </p>
+    <p class="hint" id="hint"></p>
+
+    <section class="block">
+      <div class="block-head">
+        <span class="label">检测到的上游</span>
+        <span class="sub">实际 / 钉住 / 备选 次数 · 点标签即设为锚定目标</span>
+      </div>
+      <div class="chips" id="upstreams"></div>
+    </section>
+
+    <section class="block">
+      <div class="block-head">
+        <span class="label">启用哪些模型</span>
+        <span class="sub" id="models-hint"></span>
+      </div>
+      <div class="models" id="models"></div>
+    </section>
 
     <main>
       <table>
@@ -44,13 +60,10 @@
             <th class="num">缓存命中</th>
             <th class="num">成本</th>
             <th>校验</th>
-            <th>更新</th>
           </tr>
         </thead>
         <tbody id="rows">
-          <tr>
-            <td colspan="8" class="empty">还没有记录。</td>
-          </tr>
+          <tr><td colspan="7" class="empty">还没有请求记录。</td></tr>
         </tbody>
       </table>
     </main>

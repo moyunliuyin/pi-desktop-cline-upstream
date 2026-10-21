@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.moyunliuyin.cline-upstream",
   "name": "Cline Upstream",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "把 ClinePass 的真实上游暴露出来：每个请求落在哪家、还有哪些备选，并按你的选择尝试钉住。",
   "author": "moyunliuyin",
   "license": "MIT",
@@ -83,11 +83,116 @@
         "scope": "plugin"
       },
       {
-        "key": "preferredUpstream",
+        "key": "enabledModels",
         "type": "string",
-        "title": "目标上游（留空 = 只观察，不干预）",
+        "title": "启用哪些模型（逗号或空格分隔；留空 = 全部）",
         "default": "",
         "scope": "plugin"
+      },
+      {
+        "key": "preferredUpstream",
+        "type": "select",
+        "title": "锚定到哪个上游",
+        "default": "",
+        "scope": "plugin",
+        "enum": [
+          {
+            "label": "不指定（只观察）",
+            "value": ""
+          },
+          {
+            "label": "deepseek",
+            "value": "deepseek"
+          },
+          {
+            "label": "fireworks",
+            "value": "fireworks"
+          },
+          {
+            "label": "baseten",
+            "value": "baseten"
+          },
+          {
+            "label": "digitalocean",
+            "value": "digitalocean"
+          },
+          {
+            "label": "pareto",
+            "value": "pareto"
+          },
+          {
+            "label": "wafer",
+            "value": "wafer"
+          },
+          {
+            "label": "runware",
+            "value": "runware"
+          },
+          {
+            "label": "alibaba",
+            "value": "alibaba"
+          },
+          {
+            "label": "vertex",
+            "value": "vertex"
+          },
+          {
+            "label": "particle",
+            "value": "particle"
+          },
+          {
+            "label": "novita",
+            "value": "novita"
+          },
+          {
+            "label": "togetherai",
+            "value": "togetherai"
+          },
+          {
+            "label": "deepinfra",
+            "value": "deepinfra"
+          },
+          {
+            "label": "parasail",
+            "value": "parasail"
+          },
+          {
+            "label": "gmicloud",
+            "value": "gmicloud"
+          },
+          {
+            "label": "modal",
+            "value": "modal"
+          },
+          {
+            "label": "morph",
+            "value": "morph"
+          },
+          {
+            "label": "runinfra",
+            "value": "runinfra"
+          },
+          {
+            "label": "tencent",
+            "value": "tencent"
+          },
+          {
+            "label": "boundless",
+            "value": "boundless"
+          },
+          {
+            "label": "inference-net",
+            "value": "inference-net"
+          },
+          {
+            "label": "relace",
+            "value": "relace"
+          },
+          {
+            "label": "token-pass",
+            "value": "token-pass"
+          }
+        ]
       },
       {
         "key": "injectRouting",
@@ -378,7 +483,7 @@
       }
     ]
   },
-  "changelog": "服务商 /v1/models 改为用你的 key 拉取上游真实模型目录（只保留 cline-pass/*，失败退回内置 18 个），可在 PI 的「获取列表」里勾选模型。",
+  "changelog": "目标上游改为下拉选择；新增「启用哪些模型」白名单；面板改为可交互（写回设置）；解析并展示 fallbacksAvailable 的上游名单。",
   "homepage": "https://github.com/moyunliuyin/pi-desktop-cline-upstream",
   "repository": "https://github.com/moyunliuyin/pi-desktop-cline-upstream"
 }
