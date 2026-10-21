@@ -147,7 +147,7 @@ function publishModels(ids) {
     log("warn", "declaration not written: empty model selection");
     return;
   }
-  const known = new Map(declaredModels().map((m) => [m.id, m]));
+  const known = new Map([...KNOWN_MODELS, ...declaredModels()].map((m) => [m.id, m]));
   const next = ids.map((id) => {
     const src = known.get(id) || {};
     return {
@@ -192,16 +192,29 @@ function filterIds(ids) {
   return set ? ids.filter((id) => set.has(id)) : ids;
 }
 
-/** 出厂就知道的模型：即使 key 失效、目录拉不到、清单被缩过，面板也不至于只剩几条。 */
-const FLOOR_MODEL_IDS = [
-  "cline-pass/deepseek-v4.1-flash",
-  "cline-pass/deepseek-v4-pro",
-  "cline-pass/kimi-k3",
-  "cline-pass/kimi-k2.7-code",
-  "cline-pass/qwen3.8-max",
-  "cline-pass/glm-5.3",
-  "cline-pass/mimo-v2.6-pro",
-  "cline-pass/minimax-m3",
+/**
+ * 出厂自带的上游清单：/api/v1/models 会变（曾返回 18 个 cline-pass，后来换成 468 个
+ * OpenRouter 风格 id），所以面板的「可选模型」不能只靠它。这里存全量，含参数。
+ */
+const KNOWN_MODELS = [
+  { id: "cline-pass/deepseek-v4-flash", name: "DeepSeek V4 Flash", contextWindow: 1000000, maxTokens: 384000, supportsImages: false, thinkingLevels: ["off", "none", "low", "high", "max"], defaultThinkingLevel: "high" },
+  { id: "cline-pass/deepseek-v4-pro", name: "DeepSeek V4 Pro", contextWindow: 1000000, maxTokens: 384000, supportsImages: false, thinkingLevels: ["off", "none", "high", "max"], defaultThinkingLevel: "high" },
+  { id: "cline-pass/deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", contextWindow: 1000000, maxTokens: 384000, supportsImages: true, thinkingLevels: ["off", "none", "low", "high", "max"], defaultThinkingLevel: "high" },
+  { id: "cline-pass/glm-5.2", name: "GLM-5.2", contextWindow: 1000000, maxTokens: 131072, supportsImages: false, thinkingLevels: ["off", "none", "high", "max"], defaultThinkingLevel: "high" },
+  { id: "cline-pass/glm-5.3", name: "GLM-5.3", contextWindow: 1000000, maxTokens: 131072, supportsImages: false, thinkingLevels: ["off", "low", "high", "max"], defaultThinkingLevel: "high" },
+  { id: "cline-pass/glm-5.3-flash", name: "GLM-5.3 Flash", contextWindow: 1000000, maxTokens: 131072, supportsImages: true, thinkingLevels: ["off", "low", "high", "max"], defaultThinkingLevel: "high" },
+  { id: "cline-pass/kimi-k2.6", name: "Kimi K2.6", contextWindow: 262144, maxTokens: 262144, supportsImages: true, thinkingLevels: ["off"], defaultThinkingLevel: "off" },
+  { id: "cline-pass/kimi-k2.7-code", name: "Kimi K2.7 Code", contextWindow: 262144, maxTokens: 262144, supportsImages: true, thinkingLevels: ["off"], defaultThinkingLevel: "off" },
+  { id: "cline-pass/kimi-k3", name: "Kimi K3", contextWindow: 1048576, maxTokens: 131072, supportsImages: true, thinkingLevels: ["off", "none", "low", "high", "max"], defaultThinkingLevel: "high" },
+  { id: "cline-pass/mimo-v2.5", name: "MiMo-V2.5", contextWindow: 1048576, maxTokens: 131072, supportsImages: true, thinkingLevels: ["off"], defaultThinkingLevel: "off" },
+  { id: "cline-pass/mimo-v2.5-pro", name: "MiMo-V2.5-Pro", contextWindow: 1048576, maxTokens: 131072, supportsImages: false, thinkingLevels: ["off"], defaultThinkingLevel: "off" },
+  { id: "cline-pass/mimo-v2.6-flash", name: "MiMo-V2.6-Flash", contextWindow: 1048576, maxTokens: 131072, supportsImages: true, thinkingLevels: ["off", "none", "low", "medium", "high", "xhigh"], defaultThinkingLevel: "high" },
+  { id: "cline-pass/mimo-v2.6-pro", name: "MiMo-V2.6-Pro", contextWindow: 1048576, maxTokens: 131072, supportsImages: true, thinkingLevels: ["off", "none", "low", "medium", "high", "xhigh"], defaultThinkingLevel: "high" },
+  { id: "cline-pass/minimax-m3", name: "MiniMax-M3", contextWindow: 1048576, maxTokens: 512000, supportsImages: true, thinkingLevels: ["off"], defaultThinkingLevel: "off" },
+  { id: "cline-pass/muse-spark-1.3-contributor", name: "Muse Spark 1.3 Contributor", contextWindow: 1048576, maxTokens: 131072, supportsImages: true, thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh"], defaultThinkingLevel: "high" },
+  { id: "cline-pass/qwen3.7-max", name: "Qwen3.7 Max", contextWindow: 1000000, maxTokens: 65536, supportsImages: false, thinkingLevels: ["off"], defaultThinkingLevel: "off" },
+  { id: "cline-pass/qwen3.7-plus", name: "Qwen3.7 Plus", contextWindow: 1000000, maxTokens: 64000, supportsImages: true, thinkingLevels: ["off"], defaultThinkingLevel: "off" },
+  { id: "cline-pass/qwen3.8-max", name: "Qwen3.8 Max", contextWindow: 1000000, maxTokens: 131072, supportsImages: true, thinkingLevels: ["off", "none", "low", "medium", "xhigh"], defaultThinkingLevel: "off" },
 ];
 
 /**
@@ -213,7 +226,7 @@ function knownCatalog() {
   const cached = Array.isArray(state.catalog) ? state.catalog : [];
   const previous = Array.isArray(state.availableModels) ? state.availableModels : [];
   const seen = [];
-  for (const id of [...FLOOR_MODEL_IDS, ...seeded, ...cached, ...previous]) {
+  for (const id of [...KNOWN_MODELS.map((m) => m.id), ...seeded, ...cached, ...previous]) {
     if (id && seen.indexOf(id) === -1) seen.push(id);
   }
   return seen;
