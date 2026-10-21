@@ -171,6 +171,13 @@ function publishModels(ids) {
   }
 }
 
+/** 未勾选的模型即使仍留在 PI 的服务商表里，也会在转发层被拒绝。 */
+function modelAllowed(model) {
+  const set = enabledModelSet();
+  if (!set) return true;
+  return set.has(model);
+}
+
 function filterIds(ids) {
   const set = enabledModelSet();
   return set ? ids.filter((id) => set.has(id)) : ids;
@@ -419,6 +426,18 @@ function proxyChat(req, res) {
         injected = injectRouting(model, payload);
       } catch (error) {
         log("warn", "could not parse request body, forwarding verbatim: " + messageOf(error));
+      }
+
+      if (model && !modelAllowed(model)) {
+        // PI 的服务商模型表由宿主持有，取消勾选改不动它；这里直接挡掉。
+        writeJson(res, 404, {
+          error: {
+            message: "model not enabled in Cline Upstream: " + model,
+            type: "invalid_request_error",
+            code: "model_not_enabled",
+          },
+        });
+        return;
       }
 
       const outgoing = injected ? Buffer.from(JSON.stringify(payload), "utf8") : buffer;

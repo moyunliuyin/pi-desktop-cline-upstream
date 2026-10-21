@@ -210,7 +210,7 @@ function renderModels(settings) {
   el.modelsHint.textContent =
     checkedCount === available.length
       ? `共 ${available.length} 个，全部启用`
-      : `共 ${available.length} 个，已选 ${checkedCount} 个`;
+      : `共 ${available.length} 个，已选 ${checkedCount} 个（未选的会被插件拒绝）`;
 
   const frag = document.createDocumentFragment();
   for (const id of available) {

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.moyunliuyin.cline-upstream",
   "name": "Cline Upstream",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "把 ClinePass 的真实上游暴露出来：每个请求落在哪家、还有哪些备选，并按你的选择尝试钉住。",
   "author": "moyunliuyin",
   "license": "MIT",
@@ -483,7 +483,7 @@
       }
     ]
   },
-  "changelog": "上游支持多选（provider.only 数组）；模型与上游勾选改为草稿 + 保存按钮，保存时一次性应用，勾选真正生效且不再卡顿。",
+  "changelog": "未勾选的模型在转发层直接拒绝（PI 的服务商模型表由宿主持有，插件改写清单不会更新它）；面板提示补充说明。",
   "homepage": "https://github.com/moyunliuyin/pi-desktop-cline-upstream",
   "repository": "https://github.com/moyunliuyin/pi-desktop-cline-upstream"
 }
