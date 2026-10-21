@@ -170,6 +170,58 @@ function publishModels(ids) {
   }
 }
 
+function filterIds(ids) {
+  const set = enabledModelSet();
+  return set ? ids.filter((id) => set.has(id)) : ids;
+}
+
+/**
+ * 拉一次上游模型目录（失败退回内置清单），写进 state 并发布快照，
+ * 面板的模型勾选区因此不必等 PI 打 /v1/models 才有内容。
+ */
+function fetchCatalog(done) {
+  const seeded = declaredModels().map((m) => m.id);
+  const finish = (ids) => {
+    state.availableModels = ids;
+    saveState();
+    if (done) done(ids);
+  };
+  if (!settings.apiKey) {
+    finish(seeded);
+    return;
+  }
+  const req = https.request(
+    {
+      host: UPSTREAM_HOST,
+      port: 443,
+      method: "GET",
+      path: UPSTREAM_BASE + "/models",
+      headers: { authorization: "Bearer " + settings.apiKey, accept: "application/json" },
+    },
+    (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => {
+        try {
+          const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+          const ids = (Array.isArray(parsed && parsed.data) ? parsed.data : [])
+            .filter((m) => m && typeof m.id === "string" && m.id.startsWith("cline-pass/"))
+            .map((m) => m.id);
+          finish(ids.length ? ids : seeded);
+        } catch (error) {
+          log("warn", "catalog parse failed: " + messageOf(error));
+          finish(seeded);
+        }
+      });
+    }
+  );
+  req.on("error", (error) => {
+    log("warn", "catalog fetch failed: " + messageOf(error));
+    finish(seeded);
+  });
+  req.end();
+}
+
 function declaredModels() {
   const providers = (manifest && manifest.contributes && manifest.contributes.providers) || [];
   const mine = providers.find((p) => p && p.id === "cline-upstream") || providers[0];
@@ -469,57 +521,15 @@ function handle(req, res) {
   }
 
   if (req.method === "GET" && url === "/v1/models") {
-    // PI 的「获取列表」会打这里。有 key 就拉上游真实目录，拿不到再退回内置清单。
-    const fallbackList = () => {
-      const seeded = declaredModels().map((m) => ({ id: m.id, object: "model", owned_by: "cline-pass" }));
-      state.availableModels = seeded.map((m) => m.id);
-      return { object: "list", data: filterByWhitelist(seeded) };
-    };
-    if (!settings.apiKey) {
-      writeJson(res, 200, fallbackList());
-      return;
-    }
-    const listReq = https.request(
-      {
-        host: UPSTREAM_HOST,
-        port: 443,
-        method: "GET",
-        path: UPSTREAM_BASE + "/models",
-        headers: { authorization: "Bearer " + settings.apiKey, accept: "application/json" },
-      },
-      (upstreamRes) => {
-        const chunks = [];
-        upstreamRes.on("data", (chunk) => chunks.push(chunk));
-        upstreamRes.on("end", () => {
-          try {
-            const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-            const list = Array.isArray(parsed && parsed.data) ? parsed.data : [];
-            const all = list.filter((m) => m && typeof m.id === "string" && m.id.startsWith("cline-pass/"));
-            if (all.length === 0) {
-              writeJson(res, 200, fallbackList());
-              return;
-            }
-            state.availableModels = all.map((m) => m.id);
-            saveState();
-            const exposed = filterByWhitelist(all).map((m) => m.id);
-            writeJson(res, 200, {
-              object: "list",
-              data: exposed.map((id) => ({ id, object: "model", owned_by: "cline-pass" })),
-            });
-            // 先回包，再改写声明，避免热重载打断这次响应
-            setTimeout(() => publishModels(exposed), 800);
-          } catch (error) {
-            log("warn", "model list parse failed: " + messageOf(error));
-            writeJson(res, 200, fallbackList());
-          }
-        });
-      }
-    );
-    listReq.on("error", (error) => {
-      log("warn", "model list upstream failed: " + messageOf(error));
-      writeJson(res, 200, fallbackList());
+    // PI 的「获取列表」会打这里。
+    fetchCatalog((ids) => {
+      const exposed = filterIds(ids);
+      writeJson(res, 200, {
+        object: "list",
+        data: exposed.map((id) => ({ id, object: "model", owned_by: "cline-pass" })),
+      });
+      if (settings.enabledModels) setTimeout(() => publishModels(exposed), 800);
     });
-    listReq.end();
     return;
   }
 
@@ -659,6 +669,11 @@ async function onLoad() {
   } catch (error) {
     log("error", "service registration failed: " + messageOf(error));
   }
+
+  // 载入即拉一次目录：面板的模型勾选区不用等「获取列表」
+  setTimeout(() => {
+    fetchCatalog((ids) => log("info", "catalog ready: " + ids.length + " models"));
+  }, 1200);
 }
 
 async function onUnload() {
