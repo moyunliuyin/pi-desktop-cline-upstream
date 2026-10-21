@@ -122,6 +122,54 @@ function filterByWhitelist(list) {
   return set ? list.filter((m) => set.has(m.id)) : list;
 }
 
+/**
+ * 像 wtq-pool 那样改写自己安装目录里的 manifest.json：宿主重读清单后，
+ * 服务商的模型表就变成用户勾选的那批。原子写，失败只记日志。
+ */
+function publishModels(ids) {
+  const target = path.join(__dirname, "manifest.json");
+  let doc;
+  try {
+    doc = JSON.parse(fs.readFileSync(target, "utf8"));
+  } catch (error) {
+    log("warn", "manifest read failed: " + messageOf(error));
+    return;
+  }
+  const providers = (doc.contributes && doc.contributes.providers) || [];
+  if (!providers.length) return;
+  const known = new Map(declaredModels().map((m) => [m.id, m]));
+  const next = ids.map((id) => {
+    const src = known.get(id) || {};
+    return {
+      id,
+      name: src.name || id,
+      contextWindow: src.contextWindow || 200000,
+      maxTokens: src.maxTokens || 32000,
+      supportsImages: src.supportsImages !== false,
+      thinkingLevels: src.thinkingLevels && src.thinkingLevels.length ? src.thinkingLevels : ["off", "low", "high", "max"],
+      defaultThinkingLevel: src.defaultThinkingLevel || "high",
+    };
+  });
+  const before = (providers[0].models || []).map((m) => m.id).join("|");
+  const after = next.map((m) => m.id).join("|");
+  if (before === after) return;
+  providers[0].models = next;
+  doc.contributes.providers = providers;
+  const tmp = target + ".tmp";
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(doc, null, 2) + "\n", "utf8");
+    fs.renameSync(tmp, target);
+    log("info", "declaration updated: " + next.length + " models");
+  } catch (error) {
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      /* nothing to clean */
+    }
+    log("warn", "manifest write failed: " + messageOf(error));
+  }
+}
+
 function declaredModels() {
   const providers = (manifest && manifest.contributes && manifest.contributes.providers) || [];
   const mine = providers.find((p) => p && p.id === "cline-upstream") || providers[0];
@@ -190,9 +238,9 @@ function parseRouting(body) {
     fallbacks: fallbackNames,
     modelAttemptCount: numberAfter(window, "modelAttemptCount"),
     providerAttemptCount: numberAfter(window, "providerAttemptCount"),
-    cacheHitTokens: numberAfter(window, "promptCacheHitTokens"),
-    cacheMissTokens: numberAfter(window, "promptCacheMissTokens"),
-    cost: stringAfter(window, "cost"),
+    cacheHitTokens: numberAfter(body, "promptCacheHitTokens"),
+    cacheMissTokens: numberAfter(body, "promptCacheMissTokens"),
+    cost: stringAfter(body, "cost"),
   };
 }
 
@@ -453,10 +501,13 @@ function handle(req, res) {
             }
             state.availableModels = all.map((m) => m.id);
             saveState();
+            const exposed = filterByWhitelist(all).map((m) => m.id);
             writeJson(res, 200, {
               object: "list",
-              data: filterByWhitelist(all.map((m) => ({ id: m.id, object: "model", owned_by: "cline-pass" }))),
+              data: exposed.map((id) => ({ id, object: "model", owned_by: "cline-pass" })),
             });
+            // 先回包，再改写声明，避免热重载打断这次响应
+            setTimeout(() => publishModels(exposed), 800);
           } catch (error) {
             log("warn", "model list parse failed: " + messageOf(error));
             writeJson(res, 200, fallbackList());

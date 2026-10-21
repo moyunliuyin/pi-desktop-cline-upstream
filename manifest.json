@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.moyunliuyin.cline-upstream",
   "name": "Cline Upstream",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "把 ClinePass 的真实上游暴露出来：每个请求落在哪家、还有哪些备选，并按你的选择尝试钉住。",
   "author": "moyunliuyin",
   "license": "MIT",
@@ -483,7 +483,7 @@
       }
     ]
   },
-  "changelog": "目标上游改为下拉选择；新增「启用哪些模型」白名单；面板改为可交互（写回设置）；解析并展示 fallbacksAvailable 的上游名单。",
+  "changelog": "修正 usage 解析（缓存命中/成本之前恒为 null）；「获取列表」后用勾选的模型改写服务商声明，模型表与选择保持一致。",
   "homepage": "https://github.com/moyunliuyin/pi-desktop-cline-upstream",
   "repository": "https://github.com/moyunliuyin/pi-desktop-cline-upstream"
 }
