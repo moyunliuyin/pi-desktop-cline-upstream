@@ -31,6 +31,7 @@ const DEFAULTS = {
   injectRouting: false,
   hardPin: false,
   toastOnMismatch: true,
+  apiKey: "",
 };
 
 let settings = Object.assign({}, DEFAULTS);
@@ -289,6 +290,8 @@ function proxyChat(req, res) {
 
       const outgoing = injected ? Buffer.from(JSON.stringify(payload), "utf8") : buffer;
       const headers = forwardHeaders(req.headers);
+      // 插件自持 key 优先：宿主不会把其它服务商的凭据交给插件
+      if (settings.apiKey) headers["authorization"] = "Bearer " + settings.apiKey;
       headers["content-length"] = outgoing.length;
 
       const upstream = https.request(
@@ -380,6 +383,7 @@ function applySettings(next) {
   settings.preferredUpstream = String(settings.preferredUpstream || "").trim();
   settings.injectRouting = Boolean(settings.injectRouting);
   settings.hardPin = Boolean(settings.hardPin);
+  settings.apiKey = String(settings.apiKey || "").trim();
   settings.enabled = next.enabled === undefined ? settings.enabled : Boolean(next.enabled);
 }
 
