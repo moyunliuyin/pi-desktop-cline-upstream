@@ -17,8 +17,8 @@
     </header>
 
     <section class="controls">
-      <label class="switch" title="在请求体里写入 provider.only">
-        <input type="checkbox" id="inject" /><span>写入 routing 字段</span>
+      <label class="switch" title="在请求体里写入 provider.only（实测网关忽略，仅作探测）">
+        <input type="checkbox" id="inject" /><span>写入 routing（实验）</span>
       </label>
       <label class="switch" title="同时写入 allow_fallbacks: false，失败即报错而不换家">
         <input type="checkbox" id="hardPin" /><span>强制不降级</span>
@@ -33,7 +33,7 @@
 
     <section class="block">
       <div class="block-head">
-        <span class="label">锚定到哪些上游（可多选）</span>
+        <span class="label">目标上游（实验：网关当前忽略）</span>
         <span class="sub">勾选后保存 · 数字是 实际/钉住/备选 次数 · 全不勾 = 只观察</span>
       </div>
       <div class="models" id="upstreams"></div>

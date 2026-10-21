@@ -239,15 +239,24 @@ function renderModels(settings) {
 }
 
 function renderTable(settings) {
-  const snap = snapshotOf(settings);
-  const models = (snap && snap.models) || {};
-  const entries = Object.entries(models).sort((a, b) => (b[1].at || 0) - (a[1].at || 0));
+  const snap = snapshotOf(settings) || {};
+  const recorded = snap.models || {};
+  const ids = [];
+  for (const id of availableModels(settings)) ids.push(id);
+  for (const id of Object.keys(recorded)) if (ids.indexOf(id) === -1) ids.push(id);
+  const entries = ids
+    .map((id) => [id, recorded[id] || null])
+    .sort((a, b) => {
+      const at = (x) => (x[1] && x[1].at) || 0;
+      if (at(a) !== at(b)) return at(b) - at(a);
+      return a[0].localeCompare(b[0]);
+    });
   if (entries.length === 0) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
     td.colSpan = 7;
     td.className = "empty";
-    td.textContent = "还没有请求记录。用该服务商发一条消息即可。";
+    td.textContent = "还没有模型目录：插件载入后会自己拉取（失败则用内置清单）。";
     tr.appendChild(td);
     el.rows.replaceChildren(tr);
     return;
@@ -255,6 +264,7 @@ function renderTable(settings) {
   const frag = document.createDocumentFragment();
   for (const [model, e] of entries) {
     const tr = document.createElement("tr");
+    if (!e) tr.className = "unused";
     const td = (text, cls) => {
       const c = document.createElement("td");
       if (cls) c.className = cls;
@@ -265,21 +275,24 @@ function renderTable(settings) {
 
     const final = td("");
     const span = document.createElement("span");
-    span.className = "provider" + (e.matched === true ? " hit" : e.matched === false ? " miss" : "");
-    span.textContent = e.finalProvider || "—";
+    span.className = "provider" + (e && e.matched === true ? " hit" : e && e.matched === false ? " miss" : "");
+    span.textContent = (e && e.finalProvider) || "—";
     final.appendChild(span);
     tr.appendChild(final);
 
-    tr.appendChild(td(e.pinnedProvider || "—"));
-    tr.appendChild(td(fmtCount(e.fallbackCount), "num"));
-    tr.appendChild(td(fmtCount(e.cacheHitTokens), "num"));
-    tr.appendChild(td(fmtCost(e.cost), "num"));
+    tr.appendChild(td(e ? e.pinnedProvider : null));
+    tr.appendChild(td(e ? fmtCount(e.fallbackCount) : null, "num"));
+    tr.appendChild(td(e ? fmtCount(e.cacheHitTokens) : null, "num"));
+    tr.appendChild(td(e ? fmtCost(e.cost) : null, "num"));
 
     const verdict = td("");
     const badge = document.createElement("span");
-    if (e.injected) {
+    if (!e) {
+      badge.className = "badge idle";
+      badge.textContent = "未使用";
+    } else if (e.injected) {
       badge.className = "badge " + (e.matched === true ? "ok" : e.matched === false ? "bad" : "idle");
-      badge.textContent = e.matched === true ? "已生效" : e.matched === false ? "未生效" : "无元数据";
+      badge.textContent = e.matched === true ? "落点一致" : e.matched === false ? "网关忽略" : "无元数据";
     } else {
       badge.className = "badge idle";
       badge.textContent = "仅观察";
@@ -298,14 +311,17 @@ function renderHints(settings) {
     el.hint.className = "hint warn";
     el.hint.textContent = "还没有填写 ClinePass API Key：设置 → 插件 → Cline 上游。没有 key 时插件无法转发请求。";
   } else if (targets.length && settings.injectRouting) {
-    el.hint.className = "hint";
-    el.hint.textContent = `正在把请求限制在「${targets.join(" / ")}」内（provider.only），每次响应都会自动校验落点是否在名单里。`;
+    el.hint.className = "hint warn";
+    el.hint.textContent =
+      `已把「${targets.join(" / ")}」写进请求的 provider 字段，但实测 Cline 网关会忽略它：` +
+      "落点仍由会话亲和决定，所以「网关忽略」是预期结果，不是配置错了。";
   } else if (targets.length) {
     el.hint.className = "hint";
-    el.hint.textContent = `已选目标「${targets.join(" / ")}」但未开启写入，当前只观察。`;
+    el.hint.textContent = `已记下目标「${targets.join(" / ")}」，当前只观察，不改写请求。`;
   } else {
     el.hint.className = "hint";
-    el.hint.textContent = "勾选上游（可多选）后点保存即写入 provider.only；全都不勾表示只观察，不干预路由。";
+    el.hint.textContent =
+      "本插件负责观察：每个请求落在哪个上游、还有多少备选、花了多少钱。勾选上游只是实验，网关目前忽略。";
   }
 }
 

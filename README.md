@@ -18,11 +18,11 @@ ClinePass 的同一个模型背后挂着二十多个上游（DeepSeek 官方、F
    | `promptCacheHitTokens` | 本次命中 prompt cache 的 token 数 |
    | `cost` | 本次实际成本 |
 
-2. **选模型**：该服务商的 `/v1/models` 会**用你的 key 拉取上游真实目录**（只保留 `cline-pass/*`），
-   所以在 PI 里点「获取列表」就能勾选要用的模型；拉不到时退回清单里声明的那些。
-3. **选上游 + 验证**：填一个目标上游并打开「写入 routing 字段」，插件会加
-   `provider: { only: ["<目标>"] }`（可选 `allow_fallbacks: false`），
-   再用下一次响应的 `finalProvider` 校验，面板直接显示 **已生效 / 未生效**。
+2. **选模型**：面板的可选清单来自插件内置的 18 个 `cline-pass/*`（含上下文与思考档位）；
+   上游 `/api/v1/models` 在 2026-10-21 起只返回 OpenRouter 风格目录，已不含 `cline-pass/*`。
+3. **探测上游**：勾选目标上游并打开「写入 routing（实验）」，插件会加
+   `provider: { only: ["<目标>"] }`（可选 `allow_fallbacks: false`），再拿响应的 `finalProvider` 比对。
+   实测网关忽略该字段，面板会显示 **网关忽略** —— 这是当前的预期结果，不是配置错误。
 
 ## 配置（三步）
 
@@ -42,17 +42,19 @@ ClinePass 的同一个模型背后挂着二十多个上游（DeepSeek 官方、F
 | 备选 | `fallbacksAvailable` 数量 —— 大于 0 表示上游不可用时仍会降级 |
 | 缓存命中 | `promptCacheHitTokens`。钉住同一上游才会连续命中，这是省钱的关键指标 |
 | 成本 | 本次 `cost`（已计入缓存折扣） |
-| 校验 | 仅观察 / 已生效 / 未生效 / 无元数据 |
+| 校验 | 仅观察 / 落点一致 / 网关忽略 / 无元数据 / 未使用 |
 
 面板是只读的：目标上游与开关在 **设置 → 插件 → Cline 上游** 里改。
 
-## 为什么需要「校验」这一步
+## 上游能不能被钉住（实测：不能）
 
-Cline 的公开 API 文档里 `POST /chat/completions` 只列出 5 个 body 参数
-（`model` / `messages` / `stream` / `tools` / `temperature`），**没有** provider 路由字段。
-`provider.only` 属于未公开行为，是否被接受取决于网关实现。
+Cline 公开文档的 `POST /chat/completions` 只列 5 个 body 参数，没有 provider 路由字段。
 
-所以插件不承诺「一定钉住」，而是把结果摊开：能钉住就写「已生效」，钉不住就写「未生效」。
+| 写入 | allow_fallbacks | 实际落点 |
+|---|---|---|
+| `provider.only: [fireworks]` / `[gmicloud]` / `[baseten]` | 默认或 false | 始终 deepseek |
+
+结论：网关按**会话亲和**分配上游，客户端路由字段被忽略。插件因此定位为**观察器**：把落点、备选数与成本摊开给你看。
 
 ## 权限与隐私
 

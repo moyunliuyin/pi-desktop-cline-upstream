@@ -481,3 +481,7 @@ select:focus {
 
 .model.on { color: var(--text); }
 .model.on input { border-color: var(--accent); }
+/* 没有请求记录的模型行：压暗，避免和数据行抢注意力 */
+tbody tr.unused td {
+  opacity: 0.45;
+}
