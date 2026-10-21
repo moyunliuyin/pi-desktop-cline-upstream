@@ -238,59 +238,54 @@ function renderModels(settings) {
   el.models.replaceChildren(frag);
 }
 
+function fmtTime(ms) {
+  if (!ms) return "—";
+  const d = new Date(ms);
+  const p2 = (n) => String(n).padStart(2, "0");
+  return `${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+}
+
+/** 逐条请求日志：一条请求一行，按时间倒序。 */
 function renderTable(settings) {
   const snap = snapshotOf(settings) || {};
-  const recorded = snap.models || {};
-  const ids = [];
-  for (const id of availableModels(settings)) ids.push(id);
-  for (const id of Object.keys(recorded)) if (ids.indexOf(id) === -1) ids.push(id);
-  const entries = ids
-    .map((id) => [id, recorded[id] || null])
-    .sort((a, b) => {
-      const at = (x) => (x[1] && x[1].at) || 0;
-      if (at(a) !== at(b)) return at(b) - at(a);
-      return a[0].localeCompare(b[0]);
-    });
-  if (entries.length === 0) {
+  const items = Array.isArray(snap.log) ? snap.log : [];
+  const td = (text, cls) => {
+    const c = document.createElement("td");
+    if (cls) c.className = cls;
+    c.textContent = text === null || text === undefined || text === "" ? "—" : String(text);
+    return c;
+  };
+  if (items.length === 0) {
     const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 7;
-    td.className = "empty";
-    td.textContent = "还没有模型目录：插件载入后会自己拉取（失败则用内置清单）。";
-    tr.appendChild(td);
+    const cell = document.createElement("td");
+    cell.colSpan = 8;
+    cell.className = "empty";
+    cell.textContent = "还没有请求记录：用该服务商发一条消息，这里会按请求逐条记下来。";
+    tr.appendChild(cell);
     el.rows.replaceChildren(tr);
     return;
   }
   const frag = document.createDocumentFragment();
-  for (const [model, e] of entries) {
+  for (const e of items) {
     const tr = document.createElement("tr");
-    if (!e) tr.className = "unused";
-    const td = (text, cls) => {
-      const c = document.createElement("td");
-      if (cls) c.className = cls;
-      c.textContent = text === null || text === undefined ? "—" : String(text);
-      return c;
-    };
-    tr.appendChild(td(model, "model"));
+    tr.appendChild(td(fmtTime(e.at), "time"));
+    tr.appendChild(td(e.model, "model"));
 
     const final = td("");
     const span = document.createElement("span");
-    span.className = "provider" + (e && e.matched === true ? " hit" : e && e.matched === false ? " miss" : "");
-    span.textContent = (e && e.finalProvider) || "—";
+    span.className = "provider" + (e.matched === true ? " hit" : e.matched === false ? " miss" : "");
+    span.textContent = e.finalProvider || "—";
     final.appendChild(span);
     tr.appendChild(final);
 
-    tr.appendChild(td(e ? e.pinnedProvider : null));
-    tr.appendChild(td(e ? fmtCount(e.fallbackCount) : null, "num"));
-    tr.appendChild(td(e ? fmtCount(e.cacheHitTokens) : null, "num"));
-    tr.appendChild(td(e ? fmtCost(e.cost) : null, "num"));
+    tr.appendChild(td(e.pinnedProvider));
+    tr.appendChild(td(fmtCount(e.fallbackCount), "num"));
+    tr.appendChild(td(fmtCount(e.cacheHitTokens), "num"));
+    tr.appendChild(td(fmtCost(e.cost), "num"));
 
     const verdict = td("");
     const badge = document.createElement("span");
-    if (!e) {
-      badge.className = "badge idle";
-      badge.textContent = "未使用";
-    } else if (e.injected) {
+    if (e.injected) {
       badge.className = "badge " + (e.matched === true ? "ok" : e.matched === false ? "bad" : "idle");
       badge.textContent = e.matched === true ? "落点一致" : e.matched === false ? "网关忽略" : "无元数据";
     } else {

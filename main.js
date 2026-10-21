@@ -94,6 +94,7 @@ function publishSnapshot() {
         models: state.models,
         available: state.availableModels || [],
         catalog: state.catalogStatus || null,
+        log: (state.log || []).slice(0, 60),
       }),
     });
     Promise.resolve(pi.plugin.setSettings(payload)).catch((error) => {
@@ -386,6 +387,23 @@ function recordResult(model, routing, injected, statusCode) {
   };
 
   state.models[model] = entry;
+
+  // 逐条请求日志：面板按行展示（模型名 + 时间 + 落点），保留最近 200 条
+  const item = {
+    at: entry.at,
+    model,
+    statusCode: entry.statusCode,
+    finalProvider: entry.finalProvider,
+    pinnedProvider: entry.pinnedProvider,
+    fallbackCount: entry.fallbackCount,
+    cacheHitTokens: entry.cacheHitTokens,
+    cost: entry.cost,
+    injected: entry.injected,
+    matched: entry.matched,
+  };
+  if (!Array.isArray(state.log)) state.log = [];
+  state.log.unshift(item);
+  if (state.log.length > 200) state.log.length = 200;
   state.updatedAt = entry.at;
   state.lastError = null;
   saveState();
@@ -701,6 +719,29 @@ async function onLoad() {
   }
   if (!dataDir) dataDir = path.join(os.tmpdir(), "cline-upstream");
   loadState();
+
+  // 老版本只存了「每个模型最近一次」，升级首启时用它们补一批日志行，面板不会空着
+  if (!Array.isArray(state.log)) {
+    state.log = Object.keys(state.models || {})
+      .map((model) => {
+        const e = state.models[model] || {};
+        return {
+          at: e.at || null,
+          model,
+          statusCode: e.statusCode,
+          finalProvider: e.finalProvider,
+          pinnedProvider: e.pinnedProvider,
+          fallbackCount: e.fallbackCount,
+          cacheHitTokens: e.cacheHitTokens,
+          cost: e.cost,
+          injected: e.injected,
+          matched: e.matched,
+          seeded: true,
+        };
+      })
+      .sort((a, b) => (b.at || 0) - (a.at || 0));
+    log("info", "request log seeded from summaries: " + state.log.length);
+  }
 
   try {
     if (pi && pi.plugin && typeof pi.plugin.getSettings === "function") {

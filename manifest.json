@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.moyunliuyin.cline-upstream",
   "name": "Cline Upstream",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "把 ClinePass 的真实上游摊开看：每个请求落在哪个上游、还有多少备选、缓存命中与成本。可勾选目标上游探测路由字段，实测网关会忽略。",
   "author": "moyunliuyin",
   "license": "MIT",
@@ -37,7 +37,7 @@
       "en": "Cline Upstream",
       "zh-CN": "Cline 上游"
     },
-    "width": 880,
+    "width": 1040,
     "height": 760
   },
   "activationEvents": [
@@ -353,7 +353,7 @@
       }
     ]
   },
-  "changelog": "定位改为观察器：实测 provider.only 与 allow_fallbacks 被 Cline 网关忽略（fireworks/gmicloud/baseten 各测一次，落点始终是 deepseek）；表格改为列出全部模型并标出未使用；校验列改为「网关忽略 / 落点一致 / 仅观察」。",
+  "changelog": "面板改成逐条请求日志：一条请求一行（时间/模型/落点/备选/缓存/成本/校验），保留最近 60 条；模型名不再截断，面板加宽到 1040。",
   "homepage": "https://github.com/moyunliuyin/pi-desktop-cline-upstream",
   "repository": "https://github.com/moyunliuyin/pi-desktop-cline-upstream"
 }
