@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Cline 上游</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="brand"><span class="pulse" id="pulse"></span>Cline 上游</div>
+      <div class="bar-actions">
+        <span class="status" id="status">读取中…</span>
+        <button class="ghost" id="refresh" type="button">刷新</button>
+      </div>
+    </header>
+
+    <section class="controls">
+      <label class="field grow">
+        <span class="label">目标上游（在插件设置里修改）</span>
+        <input id="preferred" disabled placeholder="未设定 = 只观察" />
+      </label>
+      <label class="switch disabled">
+        <input type="checkbox" id="inject" disabled /><span>写入 routing 字段</span>
+      </label>
+      <label class="switch disabled">
+        <input type="checkbox" id="hardPin" disabled /><span>强制不降级</span>
+      </label>
+    </section>
+
+    <p class="hint" id="hint">
+      数据来自 Cline 网关自己在响应里返回的 <code>routing</code> 元数据 —— 不是猜测。
+      把 PI 的模型切换到「Cline Upstream」服务商后发一条消息即可产生记录。
+    </p>
+
+    <main>
+      <table>
+        <thead>
+          <tr>
+            <th class="col-model">模型</th>
+            <th>实际落点</th>
+            <th>钉住</th>
+            <th class="num">备选</th>
+            <th class="num">缓存命中</th>
+            <th class="num">成本</th>
+            <th>校验</th>
+            <th>更新</th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr>
+            <td colspan="8" class="empty">还没有记录。</td>
+          </tr>
+        </tbody>
+      </table>
+    </main>
+
+    <footer class="foot">
+      <span id="foot-left">—</span>
+      <span id="foot-right"></span>
+    </footer>
+
+    <script src="panel.js"></script>
+  </body>
+</html>
