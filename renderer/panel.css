@@ -219,6 +219,7 @@ button:disabled { opacity: 0.5; cursor: default; }
   font-size: 12px;
   line-height: 1.6;
   border-bottom: 1px solid var(--line-soft);
+  white-space: pre-line;
 }
 
 .hint code {

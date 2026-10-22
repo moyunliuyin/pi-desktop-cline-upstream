@@ -42,6 +42,7 @@ let draft = null;
 let dirty = false;
 let busy = false;
 let probing = null;
+let lastProbe = null;
 
 /* ----------------------------------------------------------------- bridge */
 
@@ -308,11 +309,10 @@ function renderModels(settings) {
       try {
         const res = await invoke("probeUpstream", { model: id });
         if (res && Array.isArray(res.rows)) {
+          let text;
           if (res.rows.length <= 1) {
             const only = res.rows[0] || {};
-            el.hint.className = "hint warn";
-            el.hint.textContent =
-              `已探测 ${id}：上游目录里没有同族的替代 id，只能原样转发（当前落点 ${only.upstream || "未知"}）。`;
+            text = `已探测 ${id}：上游目录里没有同族的替代 id，只能原样转发（当前落点 ${only.upstream || "未知"}）。`;
           } else {
             const union = new Map();
             for (const row of res.rows) {
@@ -323,16 +323,18 @@ function renderModels(settings) {
             const fallbackOnly = [...union.entries()]
               .filter(([, kind]) => kind === "fallback")
               .map(([name]) => name);
-            el.hint.className = "hint";
-            el.hint.textContent =
-              `已探测 ${id}：可锚定 ${anchorable.join(" · ") || "无"}` +
-              ` · 可达上游共 ${union.size} 家` +
+            text =
+              `已探测 ${id} · 可达上游共 ${union.size} 家\n` +
+              `可锚定（${anchorable.length}）：${anchorable.join("\n              ") || "无"}` +
               (fallbackOnly.length
-                ? `，其中仅备选 ${fallbackOnly.length} 家（${fallbackOnly.slice(0, 8).join("、")}${
-                    fallbackOnly.length > 8 ? "…" : ""
-                  }）`
+                ? `\n仅备选（${fallbackOnly.length}）：${fallbackOnly.slice(0, 14).join("、")}${
+                    fallbackOnly.length > 14 ? "…" : ""
+                  }`
                 : "");
           }
+          lastProbe = text;
+          el.hint.className = "hint";
+          el.hint.textContent = text;
         }
       } catch (error) {
         el.hint.className = "hint warn";
@@ -427,6 +429,12 @@ function renderHints(settings) {
     el.hint.className = "hint";
     el.hint.textContent =
       "本插件负责观察：每个请求落在哪个上游、还有多少备选、花了多少钱。勾选上游只是实验，网关目前忽略。";
+  }
+
+  // 探测结果要能留住：refresh() 会走 renderHints()，否则刚显示就被通用提示覆盖
+  if (lastProbe) {
+    el.hint.className = "hint";
+    el.hint.textContent += "\n" + lastProbe;
   }
 }
 
