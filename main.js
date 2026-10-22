@@ -385,6 +385,25 @@ function stringAfter(text, key) {
   return m ? m[1] : null;
 }
 
+/**
+ * 网关的计费字段随通道变化：走私有通道时 `cost` 为 0，而 `inferenceCost`/`marketCost` 有值。
+ * 按「市场价 → 推理成本 → cost」取第一个非零值，避免面板恒定显示 $0。
+ */
+function readCost(body) {
+  const pick = (key) => {
+    const s = stringAfter(body, key);
+    if (s !== null) return s;
+    const n = numberAfter(body, key);
+    return n === null ? null : String(n);
+  };
+  const isZero = (v) => v === null || Number(v) === 0;
+  const market = pick("marketCost");
+  if (!isZero(market)) return market;
+  const inference = pick("inferenceCost");
+  if (!isZero(inference)) return inference;
+  return pick("cost");
+}
+
 /** Pull the gateway's routing block out of a (possibly SSE) response body. */
 function parseRouting(body) {
   if (!body) return null;
@@ -417,7 +436,7 @@ function parseRouting(body) {
     providerAttemptCount: numberAfter(window, "providerAttemptCount"),
     cacheHitTokens: numberAfter(body, "promptCacheHitTokens"),
     cacheMissTokens: numberAfter(body, "promptCacheMissTokens"),
-    cost: stringAfter(body, "cost"),
+    cost: readCost(body),
   };
 }
 

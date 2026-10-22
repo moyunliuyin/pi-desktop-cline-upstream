@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.moyunliuyin.cline-upstream",
   "name": "Cline Upstream",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "把 ClinePass 的真实上游摊开看：每个请求落在哪个上游、还有多少备选、缓存命中与成本。可勾选目标上游探测路由字段，实测网关会忽略。",
   "author": "moyunliuyin",
   "license": "MIT",
@@ -367,7 +367,7 @@
       }
     ]
   },
-  "changelog": "新增「每个模型的默认思考强度」：面板每个模型右侧可选档位，保存后写入服务商声明，重启 PI 生效。",
+  "changelog": "成本列改为取网关的 marketCost/inferenceCost：走私有通道时 cost 恒为 0，面板此前会一直显示 $0；缓存字段缺失时显示 —。",
   "homepage": "https://github.com/moyunliuyin/pi-desktop-cline-upstream",
   "repository": "https://github.com/moyunliuyin/pi-desktop-cline-upstream"
 }
