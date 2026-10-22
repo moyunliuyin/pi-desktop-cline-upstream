@@ -289,9 +289,12 @@ function renderModels(settings) {
     for (const row of probeRows) {
       const opt = document.createElement("option");
       opt.value = row.id;
-      opt.textContent = row.upstream
+      const usable = Boolean(row.upstream) && row.status === 200;
+      opt.textContent = usable
         ? `${row.upstream} ← ${row.id}（备选 ${(row.fallbacks || []).length}）`
-        : `${row.id}（探测失败）`;
+        : `${row.id}（探测失败，不可选）`;
+      // 探测失败的候选置灰：选了也只会 500，避免误选
+      if (!usable) opt.disabled = true;
       override.appendChild(opt);
     }
     override.value = draft.overrides.get(id) || "";
