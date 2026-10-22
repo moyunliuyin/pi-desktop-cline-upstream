@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.moyunliuyin.cline-upstream",
   "name": "Cline Upstream",
-  "version": "0.7.7",
+  "version": "0.7.8",
   "description": "把 ClinePass 的真实上游摊开看：每个请求落在哪个上游、还有多少备选、缓存命中与成本。可勾选目标上游探测路由字段，实测网关会忽略。",
   "author": "moyunliuyin",
   "license": "MIT",
@@ -381,7 +381,7 @@
       }
     ]
   },
-  "changelog": "探测失败的候选在「转发用的 id」下拉里置灰并标注不可选，避免选中后请求 500（例如 :batch 变体）。",
+  "changelog": "修复关键数据丢失：此前快照发布无条件清空宿主里的 apiKey，在非 Windows 或 PowerShell 被策略禁用（无法加密）时，会让用户填的 key 在重启后丢失。现在只有确实拿到密文才清空明文；面板也会提示 key 当前是加密还是明文保存。",
   "homepage": "https://github.com/moyunliuyin/pi-desktop-cline-upstream",
   "repository": "https://github.com/moyunliuyin/pi-desktop-cline-upstream"
 }

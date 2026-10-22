@@ -127,12 +127,23 @@ let declarationTimer = null;
  * so the snapshot travels through the documented settings channel instead.
  * Debounced: a burst of turns publishes once.
  */
+/**
+ * 交给宿主持久化的设置副本。
+ * 只有在确实拿到密文（apiKeyEnc）时才清空明文 apiKey；否则（非 Windows、PowerShell 被策略禁用、
+ * 加密失败）必须保留明文，否则下一次快照发布就会把宿主里的 key 抹掉，重启后 key 直接丢失。
+ */
+function settingsForHost() {
+  const sealed = Boolean(String(settings.apiKeyEnc || "").trim());
+  return Object.assign({}, settings, {
+    apiKey: sealed ? "" : String(settings.apiKey || ""),
+  });
+}
+
 function publishSnapshotNow() {
   if (snapshotTimer) clearTimeout(snapshotTimer);
   snapshotTimer = null;
   if (!pi || !pi.plugin || typeof pi.plugin.setSettings !== "function") return Promise.resolve();
-  const payload = Object.assign({}, settings, {
-    apiKey: "",
+  const payload = Object.assign(settingsForHost(), {
     routingSnapshot: JSON.stringify({
       at: state.updatedAt,
       models: state.models,
@@ -142,6 +153,7 @@ function publishSnapshotNow() {
       modelMeta: modelMetaMap(),
       probe: probeCache(),
       overrides: modelIdOverrides(),
+      keySealed: Boolean(String(settings.apiKeyEnc || "").trim()),
     }),
   });
   return Promise.resolve(pi.plugin.setSettings(payload)).catch((error) => {
@@ -1100,7 +1112,7 @@ async function onPanelInvoke(channel, payload) {
   if (name === "writeSettings") {
     applySettings(payload || {});
     if (String(settings.apiKey || "").trim()) await persistSealedKey();
-    const safe = Object.assign({}, settings, { apiKey: "" });
+    const safe = settingsForHost();
     if (pi && pi.plugin && typeof pi.plugin.setSettings === "function") {
       await pi.plugin.setSettings(safe);
     }
@@ -1117,7 +1129,7 @@ async function onPanelInvoke(channel, payload) {
     cache[model] = rows;
     settings.upstreamProbe = JSON.stringify(cache);
     if (pi && pi.plugin && typeof pi.plugin.setSettings === "function") {
-      await pi.plugin.setSettings(Object.assign({}, settings, { apiKey: "" }));
+      await pi.plugin.setSettings(settingsForHost());
     }
     await publishSnapshotNow();
     return { ok: true, model, rows };

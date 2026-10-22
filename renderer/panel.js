@@ -452,6 +452,13 @@ function renderHints(settings) {
       "本插件负责观察：每个请求落在哪个上游、还有多少备选、花了多少钱。勾选上游只是实验，网关目前忽略。";
   }
 
+  // 加密状态要显式告知：非 Windows 或 PowerShell 被策略禁用时 key 只能是明文
+  const sealed = Boolean((snapshotOf(settings) || {}).keySealed);
+  if (hasKey && !sealed) {
+    el.hint.textContent +=
+      "\n注意：API Key 当前以明文保存在插件设置里（本机没有 DPAPI，或加密失败），日志与快照不含 key。";
+  }
+
   // 探测结果要能留住：refresh() 会走 renderHints()，否则刚显示就被通用提示覆盖
   if (lastProbe) {
     el.hint.className = "hint";
