@@ -127,27 +127,38 @@ let declarationTimer = null;
  * so the snapshot travels through the documented settings channel instead.
  * Debounced: a burst of turns publishes once.
  */
+function publishSnapshotNow() {
+  if (snapshotTimer) clearTimeout(snapshotTimer);
+  snapshotTimer = null;
+  if (!pi || !pi.plugin || typeof pi.plugin.setSettings !== "function") return Promise.resolve();
+  const payload = Object.assign({}, settings, {
+    apiKey: "",
+    routingSnapshot: JSON.stringify({
+      at: state.updatedAt,
+      models: state.models,
+      available: state.availableModels || [],
+      catalog: state.catalogStatus || null,
+      log: (state.log || []).slice(0, 60),
+      modelMeta: modelMetaMap(),
+      probe: probeCache(),
+      overrides: modelIdOverrides(),
+    }),
+  });
+  return Promise.resolve(pi.plugin.setSettings(payload)).catch((error) => {
+    log("warn", "could not publish snapshot: " + messageOf(error));
+  });
+}
+
+/**
+ * 防抖版本：一轮对话里多次写状态只发布一次。
+ * 面板操作（如探测）要立刻读到结果，必须用 publishSnapshotNow()，
+ * 否则面板随后读设置时拿到的还是旧快照。
+ */
 function publishSnapshot() {
   if (snapshotTimer) clearTimeout(snapshotTimer);
   snapshotTimer = setTimeout(() => {
     snapshotTimer = null;
-    if (!pi || !pi.plugin || typeof pi.plugin.setSettings !== "function") return;
-    const payload = Object.assign({}, settings, {
-      apiKey: "",
-      routingSnapshot: JSON.stringify({
-        at: state.updatedAt,
-        models: state.models,
-        available: state.availableModels || [],
-        catalog: state.catalogStatus || null,
-        log: (state.log || []).slice(0, 60),
-        modelMeta: modelMetaMap(),
-        probe: probeCache(),
-        overrides: modelIdOverrides(),
-      }),
-    });
-    Promise.resolve(pi.plugin.setSettings(payload)).catch((error) => {
-      log("warn", "could not publish snapshot: " + messageOf(error));
-    });
+    void publishSnapshotNow();
   }, 400);
 }
 
@@ -1106,7 +1117,7 @@ async function onPanelInvoke(channel, payload) {
     if (pi && pi.plugin && typeof pi.plugin.setSettings === "function") {
       await pi.plugin.setSettings(Object.assign({}, settings, { apiKey: "" }));
     }
-    publishSnapshot();
+    await publishSnapshotNow();
     return { ok: true, model, rows };
   }
   if (name === "applyModels") {

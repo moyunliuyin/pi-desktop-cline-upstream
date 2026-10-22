@@ -43,6 +43,7 @@ let dirty = false;
 let busy = false;
 let probing = null;
 let lastProbe = null;
+let lastProbeRows = {};
 
 /* ----------------------------------------------------------------- bridge */
 
@@ -126,7 +127,9 @@ function availableModels(settings) {
 function probeOf(settings, id) {
   const snap = snapshotOf(settings) || {};
   const all = snap.probe || {};
-  return Array.isArray(all[id]) ? all[id] : [];
+  if (Array.isArray(all[id]) && all[id].length) return all[id];
+  // 快照是防抖发布的，刚探测完可能还没落地，先用本地结果顶上
+  return Array.isArray(lastProbeRows[id]) ? lastProbeRows[id] : [];
 }
 
 function parseThinking(raw) {
@@ -338,9 +341,11 @@ function renderModels(settings) {
                 : "  无") +
               (fallbackOnly.length ? `\n仅备选（${fallbackOnly.length}）：${fallbackOnly.join("、")}` : "");
           }
+          lastProbeRows[id] = res.rows;
           lastProbe = text;
           el.hint.className = "hint";
           el.hint.textContent = text;
+          renderModels(current || {});
         }
       } catch (error) {
         el.hint.className = "hint warn";
