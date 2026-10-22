@@ -533,3 +533,10 @@ tbody tr.unused td {
 .model-row .route {
   max-width: 260px;
 }
+/* 模型列里第二行：实际发出去的 id（锚定改写后与逻辑 id 不同时才出现） */
+td.model .sent {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-faint);
+  font-size: 11px;
+}

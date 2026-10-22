@@ -458,7 +458,7 @@ function parseRouting(body) {
   };
 }
 
-function recordResult(model, routing, injected, statusCode) {
+function recordResult(model, routing, injected, statusCode, sent) {
   if (!model) return;
   const preferred = selectedUpstreams().join(" / ");
   const entry = {
@@ -481,6 +481,7 @@ function recordResult(model, routing, injected, statusCode) {
         ? selectedUpstreams().indexOf(routing.finalProvider) !== -1
         : null,
     requests: ((state.models[model] && state.models[model].requests) || 0) + 1,
+    sentModel: sent && sent !== model ? sent : null,
   };
 
   state.models[model] = entry;
@@ -489,6 +490,7 @@ function recordResult(model, routing, injected, statusCode) {
   const item = {
     at: entry.at,
     model,
+    sentModel: entry.sentModel,
     statusCode: entry.statusCode,
     finalProvider: entry.finalProvider,
     pinnedProvider: entry.pinnedProvider,
@@ -752,7 +754,7 @@ function proxyChat(req, res) {
             } catch (error) {
               log("warn", "routing parse failed: " + messageOf(error));
             }
-            recordResult(model, routing, injected, upstreamRes.statusCode || 0);
+            recordResult(model, routing, injected, upstreamRes.statusCode || 0, payload && payload.model);
           });
 
           upstreamRes.on("error", (error) => {

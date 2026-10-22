@@ -392,7 +392,14 @@ function renderTable(settings) {
   for (const e of items) {
     const tr = document.createElement("tr");
     tr.appendChild(td(fmtTime(e.at), "time"));
-    tr.appendChild(td(e.model, "model"));
+    const modelCell = td(e.model, "model");
+    if (e.sentModel) {
+      const sub = document.createElement("span");
+      sub.className = "sent";
+      sub.textContent = `→ ${e.sentModel}`;
+      modelCell.appendChild(sub);
+    }
+    tr.appendChild(modelCell);
 
     const final = td("");
     const span = document.createElement("span");
