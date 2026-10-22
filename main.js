@@ -74,6 +74,7 @@ const DEFAULTS = {
   apiKey: "",
   apiKeyEnc: "",
   enabledModels: "",
+  modelThinking: "",
 };
 
 let settings = Object.assign({}, DEFAULTS);
@@ -137,6 +138,7 @@ function publishSnapshot() {
         available: state.availableModels || [],
         catalog: state.catalogStatus || null,
         log: (state.log || []).slice(0, 60),
+        modelMeta: modelMetaMap(),
       }),
     });
     Promise.resolve(pi.plugin.setSettings(payload)).catch((error) => {
@@ -175,6 +177,16 @@ function filterByWhitelist(list) {
  * 像 wtq-pool 那样改写自己安装目录里的 manifest.json：宿主重读清单后，
  * 服务商的模型表就变成用户勾选的那批。原子写，失败只记日志。
  */
+/** 面板设置的「每个模型的默认思考强度」：{ modelId: level }。 */
+function thinkingOverrides() {
+  try {
+    const parsed = JSON.parse(String(settings.modelThinking || "") || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function publishModels(ids) {
   const target = path.join(__dirname, "manifest.json");
   let doc;
@@ -191,21 +203,27 @@ function publishModels(ids) {
     return;
   }
   const known = new Map([...KNOWN_MODELS, ...declaredModels()].map((m) => [m.id, m]));
+  const overrides = thinkingOverrides();
   const next = ids.map((id) => {
     const src = known.get(id) || {};
+    const levels =
+      src.thinkingLevels && src.thinkingLevels.length ? src.thinkingLevels : ["off", "low", "high", "max"];
+    const want = overrides[id];
     return {
       id,
       name: src.name || id,
       contextWindow: src.contextWindow || 200000,
       maxTokens: src.maxTokens || 32000,
       supportsImages: src.supportsImages !== false,
-      thinkingLevels: src.thinkingLevels && src.thinkingLevels.length ? src.thinkingLevels : ["off", "low", "high", "max"],
-      defaultThinkingLevel: src.defaultThinkingLevel || "high",
+      thinkingLevels: levels,
+      defaultThinkingLevel:
+        want && levels.indexOf(want) !== -1 ? want : src.defaultThinkingLevel || levels[levels.length - 1],
     };
   });
-  const before = (providers[0].models || []).map((m) => m.id).join("|");
-  const after = next.map((m) => m.id).join("|");
-  if (before === after) return;
+  // 必须连默认思考强度一起比较：只改档位时 id 不变，早期版本会因此提前返回、什么都不写
+  const fingerprint = (list) =>
+    JSON.stringify((list || []).map((m) => [m.id, m.defaultThinkingLevel || "", (m.thinkingLevels || []).join("/")]));
+  if (fingerprint(providers[0].models) === fingerprint(next)) return;
   providers[0].models = next;
   doc.contributes.providers = providers;
   const tmp = target + ".tmp";
@@ -633,6 +651,23 @@ function proxyChat(req, res) {
 
 /* ---------------------------------------------------------------- routing */
 
+function modelMetaMap() {
+  const overrides = thinkingOverrides();
+  const map = {};
+  for (const m of [...KNOWN_MODELS, ...declaredModels()]) {
+    const levels =
+      Array.isArray(m.thinkingLevels) && m.thinkingLevels.length
+        ? m.thinkingLevels
+        : ["off", "low", "high", "max"];
+    const want = overrides[m.id];
+    map[m.id] = {
+      levels,
+      default: want && levels.indexOf(want) !== -1 ? want : m.defaultThinkingLevel || levels[levels.length - 1],
+    };
+  }
+  return map;
+}
+
 function snapshot() {
   return {
     settings,
@@ -654,6 +689,7 @@ function applySettings(next) {
   settings.hardPin = Boolean(settings.hardPin);
   settings.apiKey = String(settings.apiKey || "").trim();
   settings.enabledModels = String(settings.enabledModels || "").trim();
+  settings.modelThinking = String(settings.modelThinking || "").trim();
   settings.enabled = next.enabled === undefined ? settings.enabled : Boolean(next.enabled);
 }
 
@@ -840,7 +876,7 @@ async function onLoad() {
         const incoming = next && typeof next === "object" ? Object.assign({}, next) : {};
         const typedKey = typeof incoming.apiKey === "string" ? incoming.apiKey.trim() : "";
         delete incoming.apiKey; // 明文 key 单独处理，不能被空串覆盖掉内存里的值
-        const before = settings.enabledModels;
+        const before = settings.enabledModels + "|" + settings.modelThinking;
         applySettings(incoming);
         if (typedKey && typedKey !== settings.apiKey) {
           settings.apiKey = typedKey;
@@ -848,7 +884,7 @@ async function onLoad() {
         }
         log("info", "settings updated from host");
         // 勾选的模型变了就改写声明（防抖，避免连续点击反复热重载）
-        if (settings.enabledModels !== before) {
+        if (settings.enabledModels + "|" + settings.modelThinking !== before) {
           if (declarationTimer) clearTimeout(declarationTimer);
           declarationTimer = setTimeout(() => {
             declarationTimer = null;

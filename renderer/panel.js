@@ -120,6 +120,15 @@ function availableModels(settings) {
   return (snap && snap.available) || [];
 }
 
+function parseThinking(raw) {
+  try {
+    const parsed = JSON.parse(String(raw || "") || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function makeDraft(settings) {
   const available = availableModels(settings);
   const chosen = splitList(settings.enabledModels);
@@ -127,6 +136,7 @@ function makeDraft(settings) {
     upstreams: new Set(splitList(settings.preferredUpstream)),
     modelsAll: chosen.length === 0,
     models: new Set(chosen.length === 0 ? available : chosen),
+    thinking: new Map(Object.entries(parseThinking(settings.modelThinking))),
     inject: Boolean(settings.injectRouting),
     hardPin: Boolean(settings.hardPin),
     toast: settings.toastOnMismatch !== false,
@@ -212,7 +222,7 @@ function renderModels(settings) {
     checkedCount === available.length || checkedCount === 0
       ? "全部启用"
       : `已选 ${checkedCount} 个（未勾选的请求被拒绝）`;
-  el.modelsHint.textContent = `共 ${available.length} 个，${scope} · 重启 PI 后模型下拉框 = ${effCount} 个`;
+  el.modelsHint.textContent = `共 ${available.length} 个，${scope} · 重启 PI 后模型下拉框 = ${effCount} 个 · 右侧可选默认思考强度`;
   const cat = (snapshotOf(settings) || {}).catalog;
   if (cat && cat.ok === false) {
     const why =
@@ -224,9 +234,12 @@ function renderModels(settings) {
     el.modelsHint.textContent += ` · 目录未刷新（${why}），当前显示已知模型`;
   }
 
+  const meta = (snapshotOf(settings) || {}).modelMeta || {};
   const frag = document.createDocumentFragment();
   for (const id of available) {
-    frag.appendChild(
+    const row = document.createElement("div");
+    row.className = "model-row";
+    row.appendChild(
       checkRow(draft.models.has(id), id, "", (checked) => {
         if (checked) draft.models.add(id);
         else draft.models.delete(id);
@@ -234,6 +247,25 @@ function renderModels(settings) {
         renderModels(settings);
       })
     );
+    const info = meta[id];
+    if (info && Array.isArray(info.levels) && info.levels.length > 1) {
+      const pick = document.createElement("select");
+      pick.className = "think";
+      pick.title = "默认思考强度（保存后重启 PI 生效）";
+      for (const level of info.levels) {
+        const opt = document.createElement("option");
+        opt.value = level;
+        opt.textContent = level;
+        pick.appendChild(opt);
+      }
+      pick.value = draft.thinking.get(id) || info.default;
+      pick.addEventListener("change", () => {
+        draft.thinking.set(id, pick.value);
+        markDirty();
+      });
+      row.appendChild(pick);
+    }
+    frag.appendChild(row);
   }
   el.models.replaceChildren(frag);
 }
@@ -377,6 +409,7 @@ async function save() {
       injectRouting: draft.inject,
       hardPin: draft.hardPin,
       toastOnMismatch: draft.toast,
+      modelThinking: JSON.stringify(Object.fromEntries(draft.thinking)),
     };
     const res = await invoke("writeSettings", patch);
     if (res && res.settings) current = res.settings;
