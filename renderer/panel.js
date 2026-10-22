@@ -308,9 +308,24 @@ function renderModels(settings) {
       try {
         const res = await invoke("probeUpstream", { model: id });
         if (res && Array.isArray(res.rows)) {
+          const union = new Map();
+          for (const row of res.rows) {
+            if (row.upstream) union.set(row.upstream, "primary");
+            for (const name of row.fallbacks || []) if (!union.has(name)) union.set(name, "fallback");
+          }
+          const anchorable = res.rows.filter((r) => r.upstream).map((r) => `${r.upstream} ← ${r.id}`);
+          const fallbackOnly = [...union.entries()]
+            .filter(([, kind]) => kind === "fallback")
+            .map(([name]) => name);
           el.hint.className = "hint";
           el.hint.textContent =
-            `已探测 ${id}：` + res.rows.map((r) => `${r.upstream || "失败"} ← ${r.id}`).join(" · ");
+            `已探测 ${id}：可锚定 ${anchorable.join(" · ") || "无"}` +
+            ` · 可达上游共 ${union.size} 家` +
+            (fallbackOnly.length
+              ? `，其中仅备选 ${fallbackOnly.length} 家（${fallbackOnly.slice(0, 8).join("、")}${
+                  fallbackOnly.length > 8 ? "…" : ""
+                }）`
+              : "");
         }
       } catch (error) {
         el.hint.className = "hint warn";

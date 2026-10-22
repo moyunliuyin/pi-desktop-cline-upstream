@@ -574,7 +574,7 @@ function modelIdFor(model) {
   return typeof mapped === "string" && mapped.trim() ? mapped.trim() : null;
 }
 
-/** 探测结果：{ 逻辑模型: [{ id, status, upstream }] } */
+/** 探测结果：{ 逻辑模型: [{ id, status, upstream, fallbacks }] } */
 function probeCache() {
   try {
     const parsed = JSON.parse(String(settings.upstreamProbe || "") || "{}");
@@ -595,11 +595,14 @@ function probeCandidates(logical) {
   return out;
 }
 
-/** 用最小请求问一次上游：这个 id 会落在哪家。 */
+/**
+ * 用最小请求问一次上游：这个 id 会落在哪家，以及该模型还有哪些备选上游。
+ * 落点是 (key, 模型 id) 的函数，所以只能靠换 id 换上游；备选名单由网关自己给出。
+ */
 function probeUpstream(id) {
   return new Promise((resolve) => {
     if (!settings.apiKey) {
-      resolve({ id, status: 0, upstream: null, error: "no-api-key" });
+      resolve({ id, status: 0, upstream: null, fallbacks: [], error: "no-api-key" });
       return;
     }
     const body = JSON.stringify({
@@ -626,11 +629,16 @@ function probeUpstream(id) {
         res.on("data", (chunk) => chunks.push(chunk));
         res.on("end", () => {
           const routing = parseRouting(Buffer.concat(chunks).toString("utf8"));
-          resolve({ id, status: res.statusCode, upstream: routing ? routing.finalProvider : null });
+          resolve({
+            id,
+            status: res.statusCode,
+            upstream: routing ? routing.finalProvider : null,
+            fallbacks: routing && Array.isArray(routing.fallbacks) ? routing.fallbacks : [],
+          });
         });
       }
     );
-    req.on("error", (error) => resolve({ id, status: 0, upstream: null, error: messageOf(error) }));
+    req.on("error", (error) => resolve({ id, status: 0, upstream: null, fallbacks: [], error: messageOf(error) }));
     req.write(body);
     req.end();
   });
