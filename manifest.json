@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.moyunliuyin.cline-upstream",
   "name": "Cline Upstream",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "把 ClinePass 的真实上游摊开看：每个请求落在哪个上游、还有多少备选、缓存命中与成本。可勾选目标上游探测路由字段，实测网关会忽略。",
   "author": "moyunliuyin",
   "license": "MIT",
@@ -381,7 +381,7 @@
       }
     ]
   },
-  "changelog": "探测结果补全：同时收集网关的 fallbacksAvailable，面板区分「可锚定」（有 id 主选它）与「仅备选」，因此能一次看到该模型的可达上游全集，而不只是碰巧落到的那个。",
+  "changelog": "修复探测候选为空：候选改从接口返回的全量目录（468 个 OpenRouter 风格 id）匹配，之前读的是被 cline-pass/* 过滤后的列表，导致只能探到自身。无同族替代时面板会明确提示。",
   "homepage": "https://github.com/moyunliuyin/pi-desktop-cline-upstream",
   "repository": "https://github.com/moyunliuyin/pi-desktop-cline-upstream"
 }

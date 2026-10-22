@@ -322,14 +322,17 @@ function fetchCatalog(done) {
       res.on("data", (chunk) => chunks.push(chunk));
       res.on("end", () => {
         let ids = [];
+        let allIds = [];
         try {
           const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-          ids = (Array.isArray(parsed && parsed.data) ? parsed.data : [])
-            .filter((m) => m && typeof m.id === "string" && m.id.startsWith("cline-pass/"))
-            .map((m) => m.id);
+          const list = Array.isArray(parsed && parsed.data) ? parsed.data : [];
+          allIds = list.filter((m) => m && typeof m.id === "string").map((m) => m.id);
+          ids = allIds.filter((id) => id.startsWith("cline-pass/"));
         } catch (error) {
           log("warn", "catalog parse failed: " + messageOf(error));
         }
+        // 全量目录单独留存：探测候选要用它（接口现在返回的是 OpenRouter 风格 id，不含 cline-pass/*）
+        if (allIds.length) state.upstreamCatalog = allIds;
         if (!ids.length) {
           log("warn", "catalog empty (status " + res.statusCode + "), keeping " + known.length + " known models");
           finish(known, false, "empty:" + res.statusCode);
@@ -584,13 +587,19 @@ function probeCache() {
   }
 }
 
-/** 候选 id：目录里能对上同族 slug 的 OpenRouter 风格 id，最多 3 个，外加自身。 */
+/** 候选 id：用全量上游目录匹配同族 slug（含厂商前缀），最多 4 个，外加自身。 */
 function probeCandidates(logical) {
   const slug = String(logical).split("/").slice(1).join("/") || String(logical);
   const out = [logical];
-  for (const id of state.catalog || []) {
+  const catalog =
+    Array.isArray(state.upstreamCatalog) && state.upstreamCatalog.length
+      ? state.upstreamCatalog
+      : Array.isArray(state.catalog)
+        ? state.catalog
+        : [];
+  for (const id of catalog) {
     if (typeof id !== "string" || id === logical) continue;
-    if (id.includes(slug) && out.length < 4) out.push(id);
+    if (id.includes(slug) && out.length < 5) out.push(id);
   }
   return out;
 }
