@@ -41,6 +41,7 @@ let current = {};
 let draft = null;
 let dirty = false;
 let busy = false;
+let probing = null;
 
 /* ----------------------------------------------------------------- bridge */
 
@@ -120,6 +121,13 @@ function availableModels(settings) {
   return (snap && snap.available) || [];
 }
 
+/** 某个模型已探测到的候选 id：[{ id, upstream }] */
+function probeOf(settings, id) {
+  const snap = snapshotOf(settings) || {};
+  const all = snap.probe || {};
+  return Array.isArray(all[id]) ? all[id] : [];
+}
+
 function parseThinking(raw) {
   try {
     const parsed = JSON.parse(String(raw || "") || "{}");
@@ -137,6 +145,7 @@ function makeDraft(settings) {
     modelsAll: chosen.length === 0,
     models: new Set(chosen.length === 0 ? available : chosen),
     thinking: new Map(Object.entries(parseThinking(settings.modelThinking))),
+    overrides: new Map(Object.entries(parseThinking(settings.modelIdOverride))),
     inject: Boolean(settings.injectRouting),
     hardPin: Boolean(settings.hardPin),
     toast: settings.toastOnMismatch !== false,
@@ -222,7 +231,7 @@ function renderModels(settings) {
     checkedCount === available.length || checkedCount === 0
       ? "全部启用"
       : `已选 ${checkedCount} 个（未勾选的请求被拒绝）`;
-  el.modelsHint.textContent = `共 ${available.length} 个，${scope} · 重启 PI 后模型下拉框 = ${effCount} 个 · 右侧可选默认思考强度`;
+  el.modelsHint.textContent = `共 ${available.length} 个，${scope} · 重启 PI 后模型下拉框 = ${effCount} 个 · 右侧可设思考强度与锚定上游`;
   const cat = (snapshotOf(settings) || {}).catalog;
   if (cat && cat.ok === false) {
     const why =
@@ -265,6 +274,53 @@ function renderModels(settings) {
       });
       row.appendChild(pick);
     }
+    const probeRows = probeOf(settings, id);
+    const override = document.createElement("select");
+    override.className = "think route";
+    override.title = "锚定上游：选一个会落到目标上游的模型 id（默认原样转发）";
+    const keep = document.createElement("option");
+    keep.value = "";
+    keep.textContent = "原样转发";
+    override.appendChild(keep);
+    for (const row of probeRows) {
+      const opt = document.createElement("option");
+      opt.value = row.id;
+      opt.textContent = row.upstream ? `${row.upstream} ← ${row.id}` : `${row.id}（探测失败）`;
+      override.appendChild(opt);
+    }
+    override.value = draft.overrides.get(id) || "";
+    override.addEventListener("change", () => {
+      if (override.value) draft.overrides.set(id, override.value);
+      else draft.overrides.delete(id);
+      markDirty();
+    });
+    row.appendChild(override);
+
+    const probe = document.createElement("button");
+    probe.type = "button";
+    probe.className = "ghost tiny";
+    probe.textContent = probing === id ? "探测中…" : "探测";
+    probe.disabled = probing !== null;
+    probe.title = "用最小请求问一次上游：这个模型有哪些 id、各落在哪家（会产生少量真实调用）";
+    probe.addEventListener("click", async () => {
+      probing = id;
+      renderModels(settings);
+      try {
+        const res = await invoke("probeUpstream", { model: id });
+        if (res && Array.isArray(res.rows)) {
+          el.hint.className = "hint";
+          el.hint.textContent =
+            `已探测 ${id}：` + res.rows.map((r) => `${r.upstream || "失败"} ← ${r.id}`).join(" · ");
+        }
+      } catch (error) {
+        el.hint.className = "hint warn";
+        el.hint.textContent = error && error.message ? error.message : String(error);
+      } finally {
+        probing = null;
+        await refresh(true);
+      }
+    });
+    row.appendChild(probe);
     frag.appendChild(row);
   }
   el.models.replaceChildren(frag);
@@ -410,6 +466,7 @@ async function save() {
       hardPin: draft.hardPin,
       toastOnMismatch: draft.toast,
       modelThinking: JSON.stringify(Object.fromEntries(draft.thinking)),
+      modelIdOverride: JSON.stringify(Object.fromEntries(draft.overrides)),
     };
     const res = await invoke("writeSettings", patch);
     if (res && res.settings) current = res.settings;

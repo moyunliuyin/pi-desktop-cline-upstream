@@ -521,3 +521,14 @@ tbody tr.unused td {
   padding: 2px 4px;
   cursor: pointer;
 }
+/* 模型行里的「探测」小按钮 */
+.ghost.tiny {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  font-size: 11px;
+  border-radius: 5px;
+}
+
+.model-row .route {
+  max-width: 260px;
+}

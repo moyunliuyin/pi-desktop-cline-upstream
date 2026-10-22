@@ -75,6 +75,8 @@ const DEFAULTS = {
   apiKeyEnc: "",
   enabledModels: "",
   modelThinking: "",
+  modelIdOverride: "",
+  upstreamProbe: "",
 };
 
 let settings = Object.assign({}, DEFAULTS);
@@ -139,6 +141,8 @@ function publishSnapshot() {
         catalog: state.catalogStatus || null,
         log: (state.log || []).slice(0, 60),
         modelMeta: modelMetaMap(),
+        probe: probeCache(),
+        overrides: modelIdOverrides(),
       }),
     });
     Promise.resolve(pi.plugin.setSettings(payload)).catch((error) => {
@@ -554,6 +558,84 @@ function selectedUpstreams() {
     .filter(Boolean);
 }
 
+/** 模型 id 改写表：{ 逻辑模型: 实际转发用的 id }，用来把请求锚到指定上游。 */
+function modelIdOverrides() {
+  try {
+    const parsed = JSON.parse(String(settings.modelIdOverride || "") || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function modelIdFor(model) {
+  if (typeof model !== "string") return null;
+  const mapped = modelIdOverrides()[model];
+  return typeof mapped === "string" && mapped.trim() ? mapped.trim() : null;
+}
+
+/** 探测结果：{ 逻辑模型: [{ id, status, upstream }] } */
+function probeCache() {
+  try {
+    const parsed = JSON.parse(String(settings.upstreamProbe || "") || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** 候选 id：目录里能对上同族 slug 的 OpenRouter 风格 id，最多 3 个，外加自身。 */
+function probeCandidates(logical) {
+  const slug = String(logical).split("/").slice(1).join("/") || String(logical);
+  const out = [logical];
+  for (const id of state.catalog || []) {
+    if (typeof id !== "string" || id === logical) continue;
+    if (id.includes(slug) && out.length < 4) out.push(id);
+  }
+  return out;
+}
+
+/** 用最小请求问一次上游：这个 id 会落在哪家。 */
+function probeUpstream(id) {
+  return new Promise((resolve) => {
+    if (!settings.apiKey) {
+      resolve({ id, status: 0, upstream: null, error: "no-api-key" });
+      return;
+    }
+    const body = JSON.stringify({
+      model: id,
+      messages: [{ role: "user", content: "Answer with the single word ok." }],
+      max_tokens: 96,
+      stream: false,
+    });
+    const req = https.request(
+      {
+        host: UPSTREAM_HOST,
+        port: 443,
+        method: "POST",
+        path: UPSTREAM_BASE + "/chat/completions",
+        headers: {
+          authorization: "Bearer " + settings.apiKey,
+          "content-type": "application/json",
+          accept: "application/json",
+          "content-length": Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => {
+          const routing = parseRouting(Buffer.concat(chunks).toString("utf8"));
+          resolve({ id, status: res.statusCode, upstream: routing ? routing.finalProvider : null });
+        });
+      }
+    );
+    req.on("error", (error) => resolve({ id, status: 0, upstream: null, error: messageOf(error) }));
+    req.write(body);
+    req.end();
+  });
+}
+
 function injectRouting(model, payload) {
   if (!settings.injectRouting) return false;
   const list = selectedUpstreams();
@@ -572,10 +654,17 @@ function proxyChat(req, res) {
       let payload = null;
       let model = null;
       let injected = false;
+      let modelChanged = false;
 
       try {
         payload = JSON.parse(buffer.toString("utf8"));
         model = payload.model;
+        // 锚定上游：把逻辑模型 id 换成落在目标上游的那个 id
+        const mapped = modelIdFor(model);
+        if (mapped && mapped !== model) {
+          payload.model = mapped;
+          modelChanged = true;
+        }
         injected = injectRouting(model, payload);
       } catch (error) {
         log("warn", "could not parse request body, forwarding verbatim: " + messageOf(error));
@@ -593,7 +682,7 @@ function proxyChat(req, res) {
         return;
       }
 
-      const outgoing = injected ? Buffer.from(JSON.stringify(payload), "utf8") : buffer;
+      const outgoing = injected || modelChanged ? Buffer.from(JSON.stringify(payload), "utf8") : buffer;
       const headers = forwardHeaders(req.headers);
       // 插件自持 key 优先：宿主不会把其它服务商的凭据交给插件
       if (settings.apiKey) headers["authorization"] = "Bearer " + settings.apiKey;
@@ -709,6 +798,8 @@ function applySettings(next) {
   settings.apiKey = String(settings.apiKey || "").trim();
   settings.enabledModels = String(settings.enabledModels || "").trim();
   settings.modelThinking = String(settings.modelThinking || "").trim();
+  settings.modelIdOverride = String(settings.modelIdOverride || "").trim();
+  settings.upstreamProbe = String(settings.upstreamProbe || "").trim();
   settings.enabled = next.enabled === undefined ? settings.enabled : Boolean(next.enabled);
 }
 
@@ -984,6 +1075,22 @@ async function onPanelInvoke(channel, payload) {
       await pi.plugin.setSettings(safe);
     }
     return { ok: true, settings: safe };
+  }
+  if (name === "probeUpstream") {
+    const model = String((payload && payload.model) || "");
+    if (!model) throw new Error("probeUpstream requires a model");
+    const rows = [];
+    for (const id of probeCandidates(model)) {
+      rows.push(await probeUpstream(id));
+    }
+    const cache = probeCache();
+    cache[model] = rows;
+    settings.upstreamProbe = JSON.stringify(cache);
+    if (pi && pi.plugin && typeof pi.plugin.setSettings === "function") {
+      await pi.plugin.setSettings(Object.assign({}, settings, { apiKey: "" }));
+    }
+    publishSnapshot();
+    return { ok: true, model, rows };
   }
   if (name === "applyModels") {
     return new Promise((resolve) => {

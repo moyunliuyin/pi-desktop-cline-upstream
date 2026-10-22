@@ -64,6 +64,29 @@ Cline 公开文档的 `POST /chat/completions` 只列 5 个 body 参数，没有
 
 结论：网关按**会话亲和**分配上游，客户端路由字段被忽略。插件因此定位为**观察器**：把落点、备选数与成本摊开给你看。
 
+## 锚定上游（只能靠改写模型 id）
+
+继续实测后发现两条硬事实：
+
+1. `clientSessionId` 由 API Key 决定 —— body 里传 `sessionId` / `clientSessionId`，或加
+   `x-session-id` / `x-cline-session-id` 头，网关一律忽略，始终回同一个 `sess-…`，所以无法靠换会话重掷。
+2. 落点是 **(key, 模型 id)** 的函数：同一个 id 连发多次永远是同一家，换 id 才会换家。
+
+实测（同一模型家族、同一把 key）：
+
+| 模型 id | 实际落点 | 备选 |
+|---|---|---|
+| `cline-pass/deepseek-v4.1-flash` | `openai-compatible-private` | 0 |
+| `deepseek/deepseek-v4.1-flash-1017` | `fireworks` | 17 |
+| `deepseek/deepseek-v4.1-flash` | `alibaba` | 21 |
+
+所以锚定的做法是：**探测候选 id，选定一个落在目标上游的 id，插件在转发时改写 `model` 字段。**
+面板里每个模型行右侧的第二个下拉就是它（「原样转发」= 不改写），旁边的**探测**按钮会为该模型试跑
+几个同族 id 并列出各自落点；每次探测会产生几次真实调用（每次约 $0.00003）。
+
+代价要清楚：**id 变了，实际服务的模型变体也会变**（同族，但可能是不同版本或量化）。想零风险，
+就把下拉留在「原样转发」，只当观察器用。
+
 ## 权限与隐私
 
 - 权限：`ui.panel`、`background.service`、`provider.register`
