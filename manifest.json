@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.moyunliuyin.cline-upstream",
   "name": "Cline Upstream",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "把 ClinePass 的真实上游摊开看：每个请求落在哪个上游、还有多少备选、缓存命中与成本。可勾选目标上游探测路由字段，实测网关会忽略。",
   "author": "moyunliuyin",
   "license": "MIT",
@@ -381,7 +381,7 @@
       }
     ]
   },
-  "changelog": "修复探测结果看不到：探测完的 refresh 会用通用提示覆盖结果条，现在探测结果会保留并追加显示；提示条支持换行，可锚定与仅备选分行列出。",
+  "changelog": "探测结果展示备选全集：仅备选名单不再截断（此前只显示前 14 家），可锚定项逐行列出并标注该 id 的备选数量；下拉选项也标出备选数。",
   "homepage": "https://github.com/moyunliuyin/pi-desktop-cline-upstream",
   "repository": "https://github.com/moyunliuyin/pi-desktop-cline-upstream"
 }

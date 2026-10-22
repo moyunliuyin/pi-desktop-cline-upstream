@@ -286,7 +286,9 @@ function renderModels(settings) {
     for (const row of probeRows) {
       const opt = document.createElement("option");
       opt.value = row.id;
-      opt.textContent = row.upstream ? `${row.upstream} ← ${row.id}` : `${row.id}（探测失败）`;
+      opt.textContent = row.upstream
+        ? `${row.upstream} ← ${row.id}（备选 ${(row.fallbacks || []).length}）`
+        : `${row.id}（探测失败）`;
       override.appendChild(opt);
     }
     override.value = draft.overrides.get(id) || "";
@@ -312,25 +314,29 @@ function renderModels(settings) {
           let text;
           if (res.rows.length <= 1) {
             const only = res.rows[0] || {};
-            text = `已探测 ${id}：上游目录里没有同族的替代 id，只能原样转发（当前落点 ${only.upstream || "未知"}）。`;
+            const n = (only.fallbacks || []).length;
+            text =
+              `已探测 ${id}：上游目录里没有同族的替代 id，只能原样转发` +
+              `（当前落点 ${only.upstream || "未知"}${n ? `，另有 ${n} 家备选` : ""}）。`;
           } else {
             const union = new Map();
             for (const row of res.rows) {
               if (row.upstream) union.set(row.upstream, "primary");
               for (const name of row.fallbacks || []) if (!union.has(name)) union.set(name, "fallback");
             }
-            const anchorable = res.rows.filter((r) => r.upstream).map((r) => `${r.upstream} ← ${r.id}`);
+            const primaryRows = res.rows.filter((r) => r.upstream);
             const fallbackOnly = [...union.entries()]
               .filter(([, kind]) => kind === "fallback")
               .map(([name]) => name);
             text =
               `已探测 ${id} · 可达上游共 ${union.size} 家\n` +
-              `可锚定（${anchorable.length}）：${anchorable.join("\n              ") || "无"}` +
-              (fallbackOnly.length
-                ? `\n仅备选（${fallbackOnly.length}）：${fallbackOnly.slice(0, 14).join("、")}${
-                    fallbackOnly.length > 14 ? "…" : ""
-                  }`
-                : "");
+              `可锚定（${primaryRows.length}）：\n` +
+              (primaryRows.length
+                ? primaryRows
+                    .map((r) => `  ${r.upstream} ← ${r.id}（备选 ${(r.fallbacks || []).length} 家）`)
+                    .join("\n")
+                : "  无") +
+              (fallbackOnly.length ? `\n仅备选（${fallbackOnly.length}）：${fallbackOnly.join("、")}` : "");
           }
           lastProbe = text;
           el.hint.className = "hint";
